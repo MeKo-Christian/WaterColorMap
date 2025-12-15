@@ -2,165 +2,31 @@
 
 This document outlines the complete implementation plan for creating Stamen Watercolor-style map tiles in Go, starting with Hanover and eventually scaling globally.
 
-## Phase 1: Data Preparation and Tool Setup
+## Phase 1: Data Preparation and Tool Setup ✅ COMPLETE
 
-### 1.1 Data Fetching Interface Design
-- [x] Design tile coordinate system (z/x/y - zoom, x-tile, y-tile)
-- [x] Define stable API interface for fetching OSM data per tile
-- [x] Research Overpass API for on-demand tile queries
-- [x] Research OSM tile-based vector data sources (e.g., Protomaps, OpenMapTiles)
-- [x] Create configuration structure for data source selection
-- [x] Design bounding box calculation from tile coordinates
-- [x] Document tile naming convention (e.g., `z{zoom}_x{x}_y{y}.png`)
-- [x] Plan fallback strategies for failed data fetches
+### 1.1-1.2 Data & Tile Infrastructure
+- [x] Tile coordinate system (z/x/y) design and implementation
+- [x] Flat tile storage structure (`tiles/z{zoom}_x{x}_y{y}.png`)
+- [x] OSM data fetching via Overpass API (`internal/datasource/overpass.go`)
+- [x] Bounding box and tile range utilities (`internal/tile/coords.go`)
 
-**Documentation**: See [docs/1.1-data-fetching-interface.md](docs/1.1-data-fetching-interface.md)
+**Tested**: z13_x4317_y2692 → 2,531 features (86 water, 87 parks, 621 roads, 1,736 buildings, 1 civic) in 1.9s
 
-**Overpass API Library**: We'll use [github.com/MeKo-Christian/go-overpass](https://github.com/MeKo-Christian/go-overpass) (module: `github.com/MeKo-Christian/go-overpass`) for Overpass API queries. See [docs/using-go-overpass.md](docs/using-go-overpass.md) for usage details.
+### 1.3-1.4 Rendering Stack
+- [x] **Mapnik 3.1.0** (omniscale/go-mapnik v2.0.1) for map rendering
+- [x] Web Mercator projection (EPSG:3857), 256×256 PNG output
+- [x] Supporting libraries: paulmach/orb, fogleman/gg, disintegration/gift
+- [x] CartoCSS/XML style support with Docker setup (Dockerfile, Justfile)
 
-### 1.2 Tile Storage Structure
-- [x] Design flat folder structure for output tiles (e.g., `tiles/z{zoom}_x{x}_y{y}.png`)
-- [x] Implement tile path generation utilities
-- [x] Create tile existence checking before regeneration
-- [x] Design metadata sidecar files (optional, e.g., `.json` with generation timestamp)
-- [x] Plan directory organization strategy (single flat vs zoom-level subdirs)
-- [x] Document storage format decisions
-- [x] Keep DB migration path documented for future (Phase 5)
+**Workflow**: Mapnik renders base layers → mask extraction → watercolor effects → composite tiles
 
-**Documentation**: See [docs/1.2-tile-storage-structure.md](docs/1.2-tile-storage-structure.md)
+### 1.5 Textures
+- [x] 6 seamless 1024×1024 PNG textures (land, water, green, gray, lilac, yellow) ready in `assets/textures/`
 
-### 1.3 OSM Data Fetching Implementation
-- [x] Implement Overpass API query builder for tile bounding box
-- [x] Create retry logic with exponential backoff for API calls
-- [x] Implement rate limiting to respect API usage policies
-- [x] Add caching layer for fetched OSM data (temporary, per-tile)
-- [x] Parse OSM XML/JSON response into usable Go structures
-- [x] Extract features by type (water, land, parks, roads, buildings)
-- [x] Test data fetching for single Hanover tile
-- [x] Verify data completeness for test tile
-
-**Status**: ✅ **COMPLETE** - Successfully implemented and tested!
-
-**Implementation**: `internal/datasource/overpass.go`
-- Uses go-overpass library for API access
-- Manual query building (current library version doesn't have advanced features)
-- Feature categorization by OSM tags
-- Geometry conversion using paulmach/orb
-- Rate limiting (1 concurrent request)
-
-**Test Results** (Tile z13_x4317_y2692):
-- ✅ 2,531 total features fetched in 1.9s
-- ✅ 86 water features (rivers, streams)
-- ✅ 87 parks (green spaces)
-- ✅ 621 roads
-- ✅ 1,736 buildings
-- ✅ 1 civic building
-
-See `internal/datasource/overpass_test.go` for integration tests.
-
-### 1.4 Map Rendering Tools
-- [x] Research pure Go rendering libraries (alternative to Mapnik)
-- [x] Evaluate go-spatial, orb, or similar geometry libraries
-- [x] Research Mapnik Go bindings as fallback (go-mapnik, Gopnik)
-- [x] Decide on rendering approach: pure Go vs Mapnik integration
-- [x] Install Mapnik and configure Go bindings
-- [x] Create Mapnik renderer wrapper package
-- [x] Test basic tile rendering (256x256 PNG output)
-- [x] Document rendering tool setup and rationale
-- [x] Create Dockerfile with all dependencies
-
-**Status**: ✅ **COMPLETE** - Mapnik successfully integrated!
-
-**Implementation**: `internal/renderer/mapnik.go`
-- Go bindings for Mapnik 3.1.0
-- Web Mercator projection support (EPSG:3857)
-- Direct PNG rendering capabilities
-- Background color configuration
-- XML style loading support
-
-**Test Results**:
-- ✅ Basic rendering test passed (256x256 tiles)
-- ✅ Direct-to-file rendering working
-- ✅ Projection and bounds calculation functional
-- ✅ Test output: `testdata/output/test_render_direct.png`
-
-**Docker Support**:
-- Multi-stage Dockerfile created
-- Optional Docker workflow documented
-- Justfile with common tasks
-- All system dependencies automated
-
-**Rendering Approach Decision:**
-
-We're using **omniscale/go-mapnik** (v2.0.1) - Go bindings for Mapnik, the industry-standard map rendering library. This provides:
-
-- Native Mapnik performance with Go integration
-- CartoCSS/XML style support for sophisticated map styling
-- Battle-tested rendering pipeline used by many OSM tile servers
-- Direct geometry-to-raster rendering without intermediate steps
-- Support for all OSM feature types (polygons, lines, points)
-
-**Additional Libraries:**
-
-- `paulmach/orb` - Geometry operations and spatial calculations (tile bounds, projections)
-- `fogleman/gg` - Post-processing effects (watercolor blending, edge effects)
-- `disintegration/gift` - Image filters (blur, noise, masking for watercolor effects)
-
-**Workflow:**
-
-1. Mapnik renders base layers from OSM data (clean vector-to-raster)
-2. Extract layer masks from rendered output
-3. Apply watercolor effects using gift/gg (blur, noise, textures)
-4. Composite final watercolor-styled tiles
-
-This hybrid approach leverages Mapnik's proven map rendering with custom Go-based watercolor effects processing.
-
-### 1.5 Texture Preparation
-- [x] Organize existing seamless watercolor textures
-- [x] Verify textures are tileable (no visible seams)
-- [x] Create texture variants for different features (water, land, parks)
-- [x] Document texture specifications (size, format, color profiles)
-- [x] Prepare fallback/generic texture for initial testing
-- [x] Store textures in `assets/textures/` directory
-
-**Status**: ✅ **COMPLETE** - Seamless watercolor textures ready!
-
-**Implementation**: `internal/texture/loader_test.go`
-
-**Available Textures** (all 1024x1024 PNG, 8-bit RGB):
-- ✅ `land.png` - Base land/terrain texture (2.4 MB)
-- ✅ `water.png` - Water bodies texture (2.4 MB)
-- ✅ `green.png` - Parks/vegetation texture (2.2 MB)
-- ✅ `gray.png` - Generic/civic areas texture (1.8 MB)
-- ✅ `lilac.png` - Alternative feature texture (1.7 MB)
-- ✅ `yellow.png` - Alternative feature texture (1.7 MB)
-
-**Test Results**:
-- ✅ All 6 textures successfully load via Go's `image/png` decoder
-- ✅ All textures are square 1024x1024 resolution (optimal for seamless tiling)
-- ✅ PNG format verified for all files
-- ✅ Texture loading tested in `internal/texture/loader_test.go`
-
-**PNG Support**: Go's standard library `image/png` package provides native PNG decoding with zero additional dependencies.
-
-### 1.6 Development Environment
-- [x] Set up Go project structure (cmd/, internal/, pkg/, assets/)
-- [x] Initialize go.mod with module name
-- [x] Install Go image processing libraries (image/draw, disintegration/gift)
-- [x] Install fogleman/gg for drawing operations
-- [x] Install geometry/spatial libraries (e.g., github.com/paulmach/orb)
-- [x] Set up configuration file format (YAML/JSON for settings)
-- [x] Create basic project README with setup instructions
-- [x] Initialize git repository
-- [x] Add .gitignore (tiles/, cache/, *.png except assets)
-
-### 1.7 Configuration System
-- [x] Design configuration schema (data sources, tile settings, rendering params)
-- [x] Create example config file with sensible defaults
-- [x] Implement config loading and validation
-- [x] Add command-line flag parsing (override config values)
-- [x] Document all configuration options
-- [x] Create config for Hanover test area (center coordinates, zoom range)
+### 1.6-1.7 Project Setup
+- [x] Go structure (cmd/, internal/, pkg/, assets/), go.mod initialized
+- [x] Configuration system with YAML support
+- [x] Development environment fully prepared
 
 ## Phase 2: Rendering Base Map Layers
 
@@ -189,9 +55,9 @@ This hybrid approach leverages Mapnik's proven map rendering with custom Go-base
 - [x] Create style for parks/green spaces (distinct color)
 - [x] Create style for major roads (distinct color)
 - [x] Create style for civic/building areas (optional)
-- [ ] Test styles render correct features from data source
+- [x] Test styles render correct features from data source
 
-**Status**: ✅ **COMPLETE** (styles created, testing pending)
+**Status**: ✅ **COMPLETE**
 
 **Implementation**: 5 Mapnik XML styles in `assets/styles/layers/`:
 - `water.xml` - Water bodies and waterways (blue)
@@ -223,9 +89,9 @@ This hybrid approach leverages Mapnik's proven map rendering with custom Go-base
 - [x] Create temporary file management for datasources
 - [x] Integrate Mapnik XML style loading
 - [x] Implement rendering for each layer type
-- [ ] Test rendering on sample tile (pending Phase 2.5)
+- [x] Test rendering on sample tile (Phase 2.5)
 
-**Status**: ✅ **COMPLETE** (implementation complete, testing pending)
+**Status**: ✅ **COMPLETE**
 
 **Implementation**:
 - `internal/renderer/multipass.go` - Multi-pass rendering engine
@@ -246,18 +112,18 @@ This hybrid approach leverages Mapnik's proven map rendering with custom Go-base
 - ✅ GeoJSON conversion fully tested (7/7 tests passing)
 
 ### 2.5 Initial Testing
-- [ ] Select test tile covering central area (z13_x4317_y2692)
-- [ ] Render single test tile with all layers
-- [ ] Verify land layer fills entire background
+- [x] Select test tile covering central area (z13_x4317_y2692)
+- [x] Render single test tile with all layers
+- [x] Verify land layer fills entire background
 - [ ] Verify water features align with rivers/lakes
 - [ ] Verify parks appear in correct locations
-- [ ] Verify civic buildings render
+- [x] Verify civic buildings render
 - [ ] Verify roads render with correct widths
 - [ ] Check tile edge alignment
 - [ ] Verify color accuracy (no anti-aliasing issues)
 - [ ] Document rendering issues and edge cases
 
-**Status**: ⏳ **PENDING** - Ready for integration testing
+**Status**: 🟡 **IN PROGRESS** - Basic rendering verified; visual alignment checks pending
 
 ## Phase 3: Image Processing - Watercolor Effect
 
@@ -302,37 +168,89 @@ This hybrid approach leverages Mapnik's proven map rendering with custom Go-base
 This creates the characteristic watercolor "bleeding" effect with organic, hand-painted edges.
 
 ### 3.2 Noise Consistency Across Tiles
-- [ ] Implement deterministic noise positioning
-- [ ] Align noise texture to global tile grid
-- [ ] Test noise continuity at tile boundaries
-- [ ] Verify adjacent tiles have matching noise patterns
-- [ ] Document noise alignment strategy
+- [x] Implement deterministic noise positioning
+- [x] Align noise texture to global tile grid
+- [x] Test noise continuity at tile boundaries
+- [x] Verify adjacent tiles have matching noise patterns
+- [x] Document noise alignment strategy
+
+**Status**: ✅ **COMPLETE** - Perlin noise sampling is aligned to a global grid to avoid seams.
+
+**Implementation**: `internal/mask/processor.go`
+- Added `GeneratePerlinNoiseWithOffset` for offset-aware sampling; legacy generator delegates to it.
+
+**Tests**: `internal/mask/processor_test.go`
+- Alignment tests for horizontal and vertical neighbors against a shared reference field.
+
+**Documentation**: [docs/3.2-noise-consistency-across-tiles.md](docs/3.2-noise-consistency-across-tiles.md)
 
 ### 3.3 Texture Application
-- [ ] Implement texture tiling/scaling to tile size
-- [ ] Apply processed mask as alpha channel to texture
-- [ ] Implement color tinting for generic textures
-- [ ] Create texture variants for each layer type
-- [ ] Test texture application on sample masks
-- [ ] Verify seamless texture edges
+- [x] Implement texture tiling/scaling to tile size
+- [x] Apply processed mask as alpha channel to texture
+- [x] Implement color tinting for generic textures
+- [x] Create texture variants for each layer type
+- [x] Test texture application on sample masks
+- [x] Verify seamless texture edges
+
+**Status**: ✅ **COMPLETE** - Texture tiling, masking, tinting, and layer defaults implemented with tests.
+
+**Implementation**: `internal/texture/processor.go`
+- Global-offset tiling to keep seams invisible across tiles
+- Mask-to-alpha application with automatic texture tiling
+- Tinting utility preserving alpha
+- Default layer-to-texture mapping (land, water, parks, civic, roads)
+
+**Tests**: `internal/texture/processor_test.go`
+- Seam alignment across horizontal/vertical neighbors
+- Offset sampling correctness
+- Mask application correctness
+- Tint blending correctness
+
+**Documentation**: [docs/3.3-texture-application.md](docs/3.3-texture-application.md)
 
 ### 3.4 Edge Darkening Effect
-- [ ] Implement edge detection on original mask
-- [ ] Create secondary blur for edge outline
-- [ ] Extract outer halo from blurred mask
-- [ ] Implement edge outline tapering
-- [ ] Apply darker color to edge overlay
-- [ ] Composite edge layer onto painted layer
-- [ ] Test edge effect on various feature types
-- [ ] Fine-tune edge thickness and darkness
+- [x] Implement edge detection on original mask
+- [x] Create secondary blur for edge outline
+- [x] Extract outer halo from blurred mask
+- [x] Implement edge outline tapering
+- [x] Apply darker color to edge overlay
+- [x] Composite edge layer onto painted layer
+- [x] Test edge effect on various feature types
+- [x] Fine-tune edge thickness and darkness
+
+**Status**: ✅ **COMPLETE** - Edge halo extraction, tapering, and darkening overlay implemented with tests.
+
+**Implementation**: `internal/mask/edge.go`
+- Edge halo via inner/outer blur differencing with normalization
+- Optional gamma tapering for falloff control
+- Dark overlay compositing that preserves base alpha
+
+**Tests**: `internal/mask/edge_test.go`
+- Halo presence on edges, near-zero center/outside
+- Taper falloff correctness
+- Darkening applied only where the edge mask indicates
+
+**Documentation**: [docs/3.4-edge-darkening-effect.md](docs/3.4-edge-darkening-effect.md)
 
 ### 3.5 Layer-Specific Processing
-- [ ] Apply watercolor pipeline to land layer
-- [ ] Apply watercolor pipeline to water layer
-- [ ] Apply watercolor pipeline to parks layer
-- [ ] Apply watercolor pipeline to roads layer
-- [ ] Apply watercolor pipeline to civic areas (optional)
-- [ ] Verify each layer has appropriate visual style
+- [x] Apply watercolor pipeline to land layer
+- [x] Apply watercolor pipeline to water layer
+- [x] Apply watercolor pipeline to parks layer
+- [x] Apply watercolor pipeline to roads layer
+- [x] Apply watercolor pipeline to civic areas (optional)
+- [x] Verify each layer has appropriate visual style
+
+**Status**: ✅ **COMPLETE** - Layer-aware watercolor processing with per-layer styles, textures, and edge darkening.
+
+**Implementation**: `internal/watercolor/processor.go`
+- Per-layer styles (texture, tint, edge color/strength, blur sigmas, gamma)
+- Common pipeline params (tile size, blur, noise, threshold, antialias, seed, offsets)
+- `DefaultParams` helper plus `PaintLayer` orchestrating mask → noise → texture → edge darkening
+
+**Tests**: `internal/watercolor/processor_test.go`
+- Validates masking/tinting/edge darkening and error on missing style
+
+**Documentation**: [docs/3.5-layer-specific-processing.md](docs/3.5-layer-specific-processing.md)
 
 ### 3.6 Visual Quality Testing
 - [ ] Test multiple blur radius values

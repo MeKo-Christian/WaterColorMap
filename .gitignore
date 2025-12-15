@@ -23,6 +23,7 @@ tiles/**/*.png
 
 # Cache directories
 cache/
+.gocache/
 
 # IDE
 .idea/

@@ -238,6 +238,57 @@ func TestGeneratePerlinNoise(t *testing.T) {
 	checkNoiseDifference(t, noise, noise3)
 }
 
+// TestGeneratePerlinNoiseWithOffsetAlignment ensures offsets align noise across tiles
+func TestGeneratePerlinNoiseWithOffsetAlignment(t *testing.T) {
+	width := 256
+	height := 256
+	scale := 40.0
+	seed := int64(2024)
+
+	// Reference noise covering two horizontal tiles
+	ref := GeneratePerlinNoiseWithOffset(width*2, height, scale, seed, 0, 0)
+	left := GeneratePerlinNoiseWithOffset(width, height, scale, seed, 0, 0)
+	right := GeneratePerlinNoiseWithOffset(width, height, scale, seed, width, 0)
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			if left.GrayAt(x, y).Y != ref.GrayAt(x, y).Y {
+				t.Fatalf("left tile mismatch at (%d,%d): %d != %d", x, y,
+					left.GrayAt(x, y).Y, ref.GrayAt(x, y).Y)
+			}
+			if right.GrayAt(x, y).Y != ref.GrayAt(x+width, y).Y {
+				t.Fatalf("right tile mismatch at (%d,%d): %d != %d", x, y,
+					right.GrayAt(x, y).Y, ref.GrayAt(x+width, y).Y)
+			}
+		}
+	}
+}
+
+// TestGeneratePerlinNoiseWithOffsetVerticalAlignment ensures vertical seams are seamless
+func TestGeneratePerlinNoiseWithOffsetVerticalAlignment(t *testing.T) {
+	width := 256
+	height := 256
+	scale := 40.0
+	seed := int64(2025)
+
+	ref := GeneratePerlinNoiseWithOffset(width, height*2, scale, seed, 0, 0)
+	top := GeneratePerlinNoiseWithOffset(width, height, scale, seed, 0, 0)
+	bottom := GeneratePerlinNoiseWithOffset(width, height, scale, seed, 0, height)
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			if top.GrayAt(x, y).Y != ref.GrayAt(x, y).Y {
+				t.Fatalf("top tile mismatch at (%d,%d): %d != %d", x, y,
+					top.GrayAt(x, y).Y, ref.GrayAt(x, y).Y)
+			}
+			if bottom.GrayAt(x, y).Y != ref.GrayAt(x, y+height).Y {
+				t.Fatalf("bottom tile mismatch at (%d,%d): %d != %d", x, y,
+					bottom.GrayAt(x, y).Y, ref.GrayAt(x, y+height).Y)
+			}
+		}
+	}
+}
+
 // TestApplyNoiseToMask tests overlaying noise on a blurred mask
 func TestApplyNoiseToMask(t *testing.T) {
 	// Create a simple gradient mask (simulating a blurred edge)

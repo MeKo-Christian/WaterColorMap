@@ -49,6 +49,17 @@ func GaussianBlur(mask *image.Gray, sigma float32) *image.Gray {
 // scale: controls the frequency of the noise (smaller = more detail)
 // seed: random seed for deterministic noise generation
 func GeneratePerlinNoise(width, height int, scale float64, seed int64) *image.Gray {
+	return GeneratePerlinNoiseWithOffset(width, height, scale, seed, 0, 0)
+}
+
+// GeneratePerlinNoiseWithOffset generates Perlin noise aligned to a global grid.
+// Offsets allow adjacent tiles to sample the same underlying noise field to avoid seams.
+func GeneratePerlinNoiseWithOffset(
+	width, height int,
+	scale float64,
+	seed int64,
+	offsetX, offsetY int,
+) *image.Gray {
 	// Create Perlin noise generator with octaves, alpha, and beta parameters
 	// alpha: persistence (how much each octave contributes)
 	// beta: lacunarity (frequency multiplier between octaves)
@@ -60,8 +71,8 @@ func GeneratePerlinNoise(width, height int, scale float64, seed int64) *image.Gr
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			// Sample Perlin noise at normalized coordinates
-			nx := float64(x) / scale
-			ny := float64(y) / scale
+			nx := float64(offsetX+x) / scale
+			ny := float64(offsetY+y) / scale
 
 			// Get noise value (range approximately -1 to 1)
 			val := p.Noise2D(nx, ny)

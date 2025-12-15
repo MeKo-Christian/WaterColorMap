@@ -2,6 +2,7 @@ package renderer
 
 import (
 	"context"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,33 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/tile"
 	"github.com/MeKo-Tech/watercolormap/internal/types"
 )
+
+func assertPNGHasAnyNonTransparentPixel(t *testing.T, path string) {
+	t.Helper()
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("Failed to open PNG %s: %v", path, err)
+	}
+	defer f.Close()
+
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatalf("Failed to decode PNG %s: %v", path, err)
+	}
+
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			_, _, _, a := img.At(x, y).RGBA()
+			if a != 0 {
+				return
+			}
+		}
+	}
+
+	t.Fatalf("PNG is fully transparent: %s", path)
+}
 
 func TestMultiPassRendererCreation(t *testing.T) {
 	requireIntegration(t)
@@ -92,6 +120,11 @@ func TestRenderTileWithRealData(t *testing.T) {
 			if _, err := os.Stat(layerResult.OutputPath); err != nil {
 				t.Errorf("Layer output file not found: %s", layerResult.OutputPath)
 			}
+
+			// Non-land layers should not be fully transparent when we rendered them
+			if layer != geojson.LayerLand {
+				assertPNGHasAnyNonTransparentPixel(t, layerResult.OutputPath)
+			}
 		}
 	}
 
@@ -108,6 +141,69 @@ func TestRenderTileWithRealData(t *testing.T) {
 	}
 
 	t.Logf("Multi-pass rendering completed successfully")
+}
+
+func TestRenderAdjacentTilesWithRealData(t *testing.T) {
+	requireIntegration(t)
+
+	stylesDir := "../../assets/styles"
+	outputDir := "../../testdata/output/multipass"
+	renderer, err := NewMultiPassRenderer(stylesDir, outputDir)
+	if err != nil {
+		t.Fatalf("Failed to create renderer: %v", err)
+	}
+	defer renderer.Close()
+
+	ds := datasource.NewOverpassDataSource("")
+	defer ds.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	tiles := []tile.Coords{
+		tile.NewCoords(13, 4317, 2692), // center (Hannover)
+		tile.NewCoords(13, 4318, 2692), // east
+		tile.NewCoords(13, 4317, 2693), // south
+	}
+
+	for _, coords := range tiles {
+		coords := coords
+		t.Run(coords.String(), func(t *testing.T) {
+			tileData, err := ds.FetchTileData(ctx, types.TileCoordinate{Zoom: int(coords.Z), X: int(coords.X), Y: int(coords.Y)})
+			if err != nil {
+				t.Fatalf("Failed to fetch tile data: %v", err)
+			}
+
+			result, err := renderer.RenderTile(coords, tileData)
+			if err != nil {
+				t.Fatalf("Failed to render tile: %v", err)
+			}
+
+			// Land should always render
+			land := result.Layers[geojson.LayerLand]
+			if land == nil || land.Error != nil || land.OutputPath == "" {
+				t.Fatalf("Land layer did not render")
+			}
+
+			// For any rendered non-land layer, ensure output isn't fully transparent.
+			for layer, lr := range result.Layers {
+				if layer == geojson.LayerLand {
+					continue
+				}
+				if lr == nil {
+					continue
+				}
+				if lr.Error != nil {
+					t.Fatalf("Layer %s render error: %v", layer, lr.Error)
+				}
+				if lr.OutputPath == "" {
+					// skipped (no features)
+					continue
+				}
+				assertPNGHasAnyNonTransparentPixel(t, lr.OutputPath)
+			}
+		})
+	}
 }
 
 func TestLayerPathHelpers(t *testing.T) {
