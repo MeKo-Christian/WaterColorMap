@@ -270,12 +270,12 @@ This creates the characteristic watercolor "bleeding" effect with organic, hand-
 ## Phase 4: Compositing and Tile Delivery
 
 ### 4.1 Layer Compositing
-- [ ] Implement layer compositing engine
-- [ ] Define correct draw order (water, land, parks, civic, roads)
-- [ ] Handle layer transparency correctly
-- [ ] Implement pixel-perfect layer alignment
-- [ ] Test compositing on single tile
-- [ ] Verify layer overlap handling
+- [x] Implement layer compositing engine
+- [x] Define correct draw order (water, land, parks, civic, roads)
+- [x] Handle layer transparency correctly
+- [x] Implement pixel-perfect layer alignment
+- [x] Test compositing on single tile
+- [x] Verify layer overlap handling
 
 ### 4.2 Road Layer Special Handling
 - [ ] Ensure road line widths scale with zoom level

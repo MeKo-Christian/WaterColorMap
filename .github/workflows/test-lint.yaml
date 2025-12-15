@@ -1,0 +1,48 @@
+name: test-lint
+
+on:
+  workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: false
+        description: GitHub Token with repo:read access
+
+permissions:
+  contents: read
+
+env:
+  PAT: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  test-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go-Version
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: "*/*.sum"
+
+      - name: Download go dependencies
+        run: |
+          go mod download
+
+      - name: Setup just
+        uses: extractions/setup-just@v2
+
+      - name: Check generated
+        run: |
+          just check-generated
+
+      - name: Check tidy
+        run: |
+          just check-tidy
+
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.2.1
+          args: -D exhaustruct -D exhaustive -D godox --timeout 5m

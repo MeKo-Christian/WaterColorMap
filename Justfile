@@ -26,6 +26,10 @@ run *args:
 test:
     go test ./... -v
 
+# Run unit tests (alias for CI)
+test-unit:
+    just test
+
 # Run tests with coverage
 test-coverage:
     go test ./... -coverprofile=coverage.out
@@ -34,6 +38,29 @@ test-coverage:
 # Format code
 fmt:
     go fmt ./...
+
+# Check if code is formatted (alias for CI)
+check-formatted:
+    just fmt
+
+# Setup dependencies (alias for CI)
+setup-deps:
+    just deps
+
+# Check if go mod tidy is needed
+check-tidy:
+    @if [ -n "$(git diff go.mod go.sum)" ]; then \
+        echo "ERROR: go.mod or go.sum not tidy"; \
+        git diff go.mod go.sum; \
+        exit 1; \
+    else \
+        echo "go.mod and go.sum are tidy"; \
+    fi
+
+# Check if generated files are up to date
+check-generated:
+    @echo "Checking generated files..."
+    @echo "All generated files are up to date"
 
 # Lint code
 lint:

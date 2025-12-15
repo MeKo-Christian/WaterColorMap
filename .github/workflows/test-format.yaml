@@ -1,0 +1,37 @@
+name: test-format
+
+on:
+  workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: false
+        description: GitHub Token with repo:read access
+
+permissions:
+  contents: read
+
+env:
+  PAT: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  test-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup just
+        uses: extractions/setup-just@v2
+
+      - name: Install formatters and linters
+        run: |
+          just setup-deps
+
+      - name: Run treefmt
+        run: |
+          just check-formatted

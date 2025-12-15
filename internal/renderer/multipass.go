@@ -34,9 +34,9 @@ type TileRenderResult struct {
 }
 
 // NewMultiPassRenderer creates a new multi-pass renderer
-func NewMultiPassRenderer(stylesDir, outputDir string) (*MultiPassRenderer, error) {
-	// Create Mapnik renderer (empty style file, 256x256 tile size)
-	mapnikRenderer, err := NewMapnikRenderer("", 256)
+func NewMultiPassRenderer(stylesDir, outputDir string, tileSize int) (*MultiPassRenderer, error) {
+	// Create Mapnik renderer (empty style file, requested tile size)
+	mapnikRenderer, err := NewMapnikRenderer("", tileSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Mapnik renderer: %w", err)
 	}

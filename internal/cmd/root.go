@@ -3,12 +3,15 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"log/slog"
 )
 
 var cfgFile string
+var logger *slog.Logger
 
 var rootCmd = &cobra.Command{
 	Use:   "watercolormap",
@@ -20,6 +23,9 @@ and outputs styled map tiles suitable for web mapping applications.`,
 }
 
 func Execute() {
+	if logger == nil {
+		initLogging() // fallback in case cobra init didn't fire
+	}
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -27,12 +33,13 @@ func Execute() {
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
+	cobra.OnInitialize(initConfig, initLogging)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./config.yaml)")
 	rootCmd.PersistentFlags().String("data-source", "overpass", "Data source for OSM data (overpass, protomaps)")
 	rootCmd.PersistentFlags().String("output-dir", "./tiles", "Output directory for generated tiles")
 	rootCmd.PersistentFlags().Bool("verbose", false, "Enable verbose logging")
+	rootCmd.PersistentFlags().String("log-level", "info", "Log level (debug, info, warn, error)")
 
 	if err := viper.BindPFlag("data-source", rootCmd.PersistentFlags().Lookup("data-source")); err != nil {
 		panic(fmt.Sprintf("failed to bind flag: %v", err))
@@ -41,6 +48,9 @@ func init() {
 		panic(fmt.Sprintf("failed to bind flag: %v", err))
 	}
 	if err := viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
+	if err := viper.BindPFlag("log-level", rootCmd.PersistentFlags().Lookup("log-level")); err != nil {
 		panic(fmt.Sprintf("failed to bind flag: %v", err))
 	}
 }
@@ -62,4 +72,26 @@ func initConfig() {
 			fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		}
 	}
+}
+
+func initLogging() {
+	levelStr := strings.ToLower(viper.GetString("log-level"))
+	level := slog.LevelInfo
+	switch levelStr {
+	case "debug":
+		level = slog.LevelDebug
+	case "info", "":
+		level = slog.LevelInfo
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error", "err":
+		level = slog.LevelError
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown log level %q, defaulting to info\n", levelStr)
+		level = slog.LevelInfo
+	}
+
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})
+	logger = slog.New(handler)
+	slog.SetDefault(logger)
 }
