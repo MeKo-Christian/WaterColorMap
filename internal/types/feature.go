@@ -40,11 +40,11 @@ type FeatureCollection struct {
 
 // TileData represents all data for a single tile
 type TileData struct {
-	Coordinate TileCoordinate
-	Bounds     BoundingBox
-	Features   FeatureCollection
 	FetchedAt  time.Time
-	Source     string // Data source identifier
+	Source     string
+	Features   FeatureCollection
+	Bounds     BoundingBox
+	Coordinate TileCoordinate
 }
 
 // Count returns the total number of features

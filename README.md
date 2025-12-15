@@ -1,250 +1,170 @@
 # WaterColorMap
 
-A watercolor-styled map tile generator that creates beautiful, artistic map tiles from OpenStreetMap data.
+Generate Stamen Watercolor–style raster map tiles from OpenStreetMap data — with multi-pass rendering, mask processing, watercolor textures, and seamless compositing.
 
-## Overview
+WaterColorMap is built for "old-school" raster cartography: we render clean layer masks (Mapnik), distort edges organically (blur + deterministic Perlin noise + threshold), apply seamless watercolor textures, then composite everything into final web-ready tiles.
 
-WaterColorMap fetches OpenStreetMap data for specific tiles, applies watercolor rendering techniques, and outputs styled map tiles suitable for web mapping applications.
+## Highlights
 
-## Features
+- Full watercolor tile pipeline (render → masks → textures → composite)
+- Deterministic edges across tile boundaries (no seams)
+- Multi-pass Mapnik rendering for clean layer isolation
+- Built-in textures and Mapnik styles (land/water/parks/civic/roads)
+- Fast batch generation with safe caching and `--force` regeneration
+- Docker and native Linux workflows
 
-- 🎨 Watercolor-style rendering of map features
-- 🗺️ Tile-based coordinate system (z/x/y)
-- 📦 Multiple OSM data sources (Overpass API, Protomaps, etc.)
-- ⚡ Efficient tile caching and regeneration control
-- 🛠️ CLI-based workflow with Cobra/Viper
-- 🎯 Task orchestration with Just
+## Requirements
 
-## Prerequisites
+- Linux (tested on Ubuntu 24.04)
+- Go 1.25+
+- Mapnik 3.1+ (`libmapnik-dev`, `mapnik-utils`, `python3-mapnik`)
+- Build tooling: `pkg-config`, `build-essential`
+- Optional: [Just](https://github.com/casey/just) for one-liner workflows
 
-- Go 1.25 or higher
-- [Just](https://github.com/casey/just) command runner (optional but recommended)
-- Git
-- **Mapnik 3.1+** and development libraries (libmapnik-dev)
-- pkg-config
-- C++ compiler (g++ or clang)
-
-## Quick Start
-
-### 1. Clone the Repository
+## Quick Start (native)
 
 ```bash
 git clone https://github.com/MeKo-Tech/watercolormap.git
 cd watercolormap
-```
 
-### 2. Install System Dependencies
-
-On Ubuntu/Debian:
-```bash
 sudo apt update
-sudo apt install -y libmapnik-dev mapnik-utils build-essential pkg-config
-```
+sudo apt install -y libmapnik-dev mapnik-utils python3-mapnik build-essential pkg-config
 
-Or use the provided Justfile:
-```bash
-just install-deps
-```
-
-### 3. Setup Go Environment
-
-Using Just (recommended):
-```bash
+cp config.example.yaml config.yaml
 just build
+
+# Generate a single tile (Hanover example)
+./bin/watercolormap generate --tile z13_x4297_y2754
 ```
 
-Or manually:
-```bash
-go mod download
-go mod tidy
-mkdir -p tiles cache testdata/output
-CGO_ENABLED=1 go build -o watercolormap ./cmd/watercolormap
-```
+More setup details (including troubleshooting) are in [SETUP.md](SETUP.md).
 
-### 4. Configure
+## Quick Start (Docker)
 
-Copy the example configuration:
 ```bash
 cp config.example.yaml config.yaml
-```
-
-Edit `config.yaml` to customize settings.
-
-### 5. Run
-
-```bash
-./watercolormap --help
-```
-
-## Docker Support
-
-Build and run using Docker:
-
-```bash
-# Build image
 just docker-build
 
-# Run container
-docker-compose run watercolormap --help
-
-# Development container with shell access
-just docker-dev
+docker run --rm \
+	-v "$PWD/config.yaml:/app/config.yaml:ro" \
+	-v "$PWD/tiles:/app/tiles" \
+	-v "$PWD/cache:/app/cache" \
+	-v "$PWD/assets:/app/assets:ro" \
+	-e WATERCOLORMAP_CONFIG=/app/config.yaml \
+	watercolormap:latest generate --tile z13_x4297_y2754
 ```
 
 ## Usage
 
-### Generate a Tile
+### Generate tiles
+
+Generate a single tile:
 
 ```bash
-# Generate a single tile
-watercolormap generate --zoom 13 --x 4299 --y 2740
-
-# Force regeneration
-watercolormap generate -z 13 -x 4299 -y 2740 --force
-
-# Using Just
-just generate-tile 13 4299 2740
+watercolormap generate --tile z13_x4297_y2754
 ```
 
-### Available Commands
+Generate a tile using explicit coordinates:
 
 ```bash
-watercolormap --help          # Show help
-watercolormap version         # Show version information
-watercolormap generate        # Generate map tiles
+watercolormap generate --zoom 13 --x 4297 --y 2754
 ```
 
-### Configuration
+Generate a batch for a bounding box / zoom range (see `watercolormap generate --help` for the exact flags supported by your build):
 
-Configuration can be provided via:
-1. Configuration file (`config.yaml`)
-2. Environment variables (prefix: `WATERCOLORMAP_`)
-3. Command-line flags
-
-Example:
 ```bash
-# Via config file
-watercolormap generate --config ./config.yaml
-
-# Via environment variable
-export WATERCOLORMAP_OUTPUT_DIR=./my-tiles
-watercolormap generate
-
-# Via flag
-watercolormap generate --output-dir ./my-tiles
+watercolormap generate --min-zoom 10 --max-zoom 16 --bounds "9.60,52.30,9.90,52.50"
 ```
+
+### Serve tiles in Leaflet
+
+WaterColorMap can generate static PNG tiles; you can serve them with any web server and view them in Leaflet.
+
+If you serve the `tiles/` folder (for example with `python3 -m http.server 8000` from the repo root), you can point Leaflet at the default flat file naming scheme (`z{z}_x{x}_y{y}.png`) like this:
+
+```js
+const layer = L.tileLayer('', {
+	maxZoom: 16,
+	attribution: '© OpenStreetMap contributors'
+});
+
+layer.getTileUrl = ({ x, y, z }) => `http://localhost:8000/tiles/z${z}_x${x}_y${y}.png`;
+layer.addTo(map);
+```
+
+## Output layout
+
+By default, tiles are written to `./tiles` as PNG files using the naming scheme:
+
+```
+tiles/
+	z13_x4297_y2754.png
+	z13_x4297_y2754@2x.png        # optional HiDPI output
+```
+
+During generation, intermediate layer renders and processed masks may be stored in the cache directory for debugging and faster incremental builds.
+
+## How it works (pipeline)
+
+1. Fetch OSM features for the requested tile (Overpass API)
+2. Convert features to GeoJSON per layer (land/water/parks/civic/roads)
+3. Render each layer via Mapnik to a clean RGBA mask image (multi-pass)
+4. Convert layer images to binary masks and apply the watercolor mask pipeline:
+	 - Gaussian blur
+	 - deterministic Perlin noise overlay
+	 - thresholding + antialias
+5. Apply seamless watercolor textures as alpha-masked fills
+6. Composite layers in the correct order into a final tile
+
+Mask processing details: [docs/3.1-mask-processing-pipeline.md](docs/3.1-mask-processing-pipeline.md)
+
+## Configuration
+
+Configuration is loaded from:
+
+1. `--config` (defaults to `./config.yaml`)
+2. Environment variables (`WATERCOLORMAP_…`)
+3. CLI flags
+
+Start with the example file: [config.example.yaml](config.example.yaml)
+
+Key options:
+
+- `data-source`: OSM data source (default: `overpass`)
+- `output-dir`: where generated tiles go
+- `overpass.*`: endpoint, rate limiting, retry/backoff
+- `tile.*`: size, format, DPI, cache settings
+- `rendering.*`: layer order, texture mapping, fallback colors
 
 ## Development
 
-### Available Just Commands
-
 ```bash
-just                    # Show all available commands
-just build              # Build the application
-just test               # Run tests
-just test-coverage      # Run tests with coverage
-just fmt                # Format code
-just lint               # Run linter
-just check              # Run all quality checks (fmt + lint + test)
-just clean              # Clean build artifacts
-just docker-build       # Build Docker image
-just docker-run         # Run in Docker
-just docker-dev         # Start development container
+just build
+just test
+just fmt
+just lint
+just check
 ```
 
-### Project Structure
+## Project layout
 
 ```
-.
-├── cmd/
-│   └── watercolormap/        # CLI entry point
-├── internal/
-│   ├── cmd/                  # Cobra commands
-│   ├── types/                # Core types (TileCoordinate, Feature, etc.)
-│   ├── datasource/           # OSM data fetching (Overpass API)
-│   └── renderer/             # Mapnik rendering wrapper
-├── assets/
-│   ├── textures/             # Watercolor textures (future)
-│   └── styles/               # Mapnik XML styles
-├── docs/                     # Documentation
-├── tiles/                    # Generated tiles (gitignored)
-├── cache/                    # Data cache (gitignored)
-├── testdata/                 # Test data and outputs
-├── config.example.yaml       # Example configuration
-├── Dockerfile               # Multi-stage Docker build
-├── docker-compose.yml       # Container orchestration
-├── Justfile                 # Development automation
-└── go.mod                   # Go module definition
+cmd/watercolormap/              # CLI entry
+internal/datasource/            # OSM/Overpass fetching
+internal/geojson/               # OSM features → GeoJSON
+internal/renderer/              # Mapnik rendering + multi-pass
+internal/mask/                  # Watercolor mask processing
+internal/tile/                  # z/x/y math + bounds
+assets/styles/                  # Mapnik styles
+assets/textures/                # Seamless watercolor textures
+docs/                           # Design notes and phase docs
 ```
 
-### Testing
+## Attribution
 
-```bash
-just test              # Run all tests
-just test-coverage     # Generate coverage report with HTML output
-```
-
-Unit tests are in `*_test.go` files alongside source code. Integration tests require Mapnik and may fetch data from Overpass API.
-
-Run only short tests (skips integration):
-```bash
-go test -short ./...
-```
-
-### Code Quality
-
-```bash
-just fmt              # Format code
-just lint             # Run linters
-just check            # Run all quality checks (fmt + lint + test)
-```
-
-## Configuration Reference
-
-See [config.example.yaml](config.example.yaml) for a complete configuration reference with all available options.
-
-### Key Configuration Sections
-
-- **data-source**: OSM data source selection
-- **output-dir**: Where to save generated tiles
-- **overpass**: Overpass API settings (endpoint, rate limiting, retry logic)
-- **tile**: Tile generation settings (size, format, DPI)
-- **rendering**: Rendering configuration (textures, layers, colors)
-- **test-area**: Hanover test area configuration
-
-## Roadmap
-
-See [PLAN.md](PLAN.md) for the detailed development plan.
-
-### Phase 1: Data Preparation and Tool Setup ✅
-- ✅ Go project structure
-- ✅ CLI framework (Cobra/Viper)
-- ✅ Configuration system (YAML + env vars)
-- ✅ Tile coordinate system and storage
-- ✅ OSM data fetching (Overpass API)
-- ✅ Map rendering tools (Mapnik integration)
-- ✅ Docker support
-- ⬜ Texture preparation (next step)
-
-### Future Phases
-- Phase 2: Basic Tile Rendering
-- Phase 3: Watercolor Effect Application
-- Phase 4: Area Rendering and Optimization
-- Phase 5: Deployment and Scaling
-
-## Contributing
-
-Contributions are welcome! Please ensure:
-- Code passes all tests (`just test`)
-- Code is formatted (`just fmt`)
-- Linting passes (`just lint`)
-- All quality checks pass (`just check`)
+- Map data: © OpenStreetMap contributors
+- Watercolor inspiration: Stamen Design's "Watercolor" process and textures writeups
 
 ## License
 
-[Add your license here]
-
-## Acknowledgments
-
-- OpenStreetMap contributors for map data
-- Stamen Design for watercolor map inspiration
+License is not yet specified. If you plan to publish or redistribute, add a license file first.

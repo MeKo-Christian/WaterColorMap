@@ -106,17 +106,27 @@ verify-mapnik:
 # Build Docker image
 docker-build:
     @echo "Building Docker image..."
-    docker build -t watercolormap:latest .
+    docker build -f docker/Dockerfile -t watercolormap:latest .
 
 # Run Docker container
-docker-run:
+docker-run *args:
     @echo "Running Docker container..."
-    docker-compose run --rm watercolormap
+    docker run --rm \
+        -v "${PWD}/config.yaml:/app/config.yaml:ro" \
+        -v "${PWD}/tiles:/app/tiles" \
+        -v "${PWD}/cache:/app/cache" \
+        -v "${PWD}/assets:/app/assets:ro" \
+        -e WATERCOLORMAP_CONFIG=/app/config.yaml \
+        watercolormap:latest {{args}}
 
 # Start development Docker container
 docker-dev:
     @echo "Starting development container..."
-    docker-compose run --rm dev bash
+    docker run --rm -it \
+        -v "${PWD}:/app" \
+        --workdir /app \
+        --entrypoint bash \
+        $(docker build -q -f docker/Dockerfile --target builder .)
 
 # Generate a test tile (example)
 generate-test-tile:

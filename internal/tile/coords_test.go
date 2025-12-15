@@ -7,12 +7,12 @@ import (
 
 func TestCoordsString(t *testing.T) {
 	tests := []struct {
-		coords   Coords
 		expected string
+		coords   Coords
 	}{
-		{Coords{Z: 13, X: 4297, Y: 2754}, "z13_x4297_y2754"},
-		{Coords{Z: 0, X: 0, Y: 0}, "z0_x0_y0"},
-		{Coords{Z: 18, X: 12345, Y: 67890}, "z18_x12345_y67890"},
+		{coords: Coords{Z: 13, X: 4297, Y: 2754}, expected: "z13_x4297_y2754"},
+		{coords: Coords{Z: 0, X: 0, Y: 0}, expected: "z0_x0_y0"},
+		{coords: Coords{Z: 18, X: 12345, Y: 67890}, expected: "z18_x12345_y67890"},
 	}
 
 	for _, tt := range tests {

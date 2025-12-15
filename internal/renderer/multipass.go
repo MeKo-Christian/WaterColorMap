@@ -21,16 +21,16 @@ type MultiPassRenderer struct {
 
 // LayerRenderResult contains the result of rendering a single layer
 type LayerRenderResult struct {
+	Error      error
 	Layer      geojson.LayerType
 	OutputPath string
-	Error      error
 }
 
 // TileRenderResult contains the results of rendering all layers for a tile
 type TileRenderResult struct {
-	TileCoords tile.Coords
 	Layers     map[geojson.LayerType]*LayerRenderResult
-	TotalTime  float64 // seconds
+	TotalTime  float64
+	TileCoords tile.Coords
 }
 
 // NewMultiPassRenderer creates a new multi-pass renderer

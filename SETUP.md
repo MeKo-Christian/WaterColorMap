@@ -68,15 +68,12 @@ just test
 
 ### Method 2: Docker (Recommended for Production)
 
-#### 1. Install Docker and Docker Compose
+#### 1. Install Docker
 
 ```bash
 # Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
-
-# Docker Compose (if not included)
-sudo apt install docker-compose-plugin
 ```
 
 #### 2. Clone Repository
@@ -91,19 +88,22 @@ cd watercolormap
 ```bash
 # Using Justfile
 just docker-build
-
-# Or using docker-compose
-docker-compose build
 ```
 
 #### 4. Run in Container
 
 ```bash
 # Show help
-docker-compose run --rm watercolormap --help
+docker run --rm watercolormap:latest --help
 
 # Generate a tile
-docker-compose run --rm watercolormap generate --tile z13_x4297_y2754
+docker run --rm \
+   -v "$PWD/config.yaml:/app/config.yaml:ro" \
+   -v "$PWD/tiles:/app/tiles" \
+   -v "$PWD/cache:/app/cache" \
+   -v "$PWD/assets:/app/assets:ro" \
+   -e WATERCOLORMAP_CONFIG=/app/config.yaml \
+   watercolormap:latest generate --tile z13_x4297_y2754
 ```
 
 ## Development Setup
@@ -213,7 +213,7 @@ dpkg -l | grep libmapnik
 docker system prune -a
 
 # Rebuild with no cache
-docker-compose build --no-cache
+docker build --no-cache -f docker/Dockerfile -t watercolormap:latest .
 ```
 
 ### Issue: "permission denied" when running Docker

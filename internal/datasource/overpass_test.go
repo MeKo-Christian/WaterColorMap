@@ -147,12 +147,12 @@ func TestFetchHanoverTile(t *testing.T) {
 // TestTileCoordinateConversion tests the tile coordinate to bounding box conversion
 func TestTileCoordinateConversion(t *testing.T) {
 	tests := []struct {
-		name          string
-		tile          types.TileCoordinate
-		expectedLat   float64 // Approximate center latitude
-		expectedLon   float64 // Approximate center longitude
-		deltaLat      float64 // Acceptable error
-		deltaLon      float64 // Acceptable error
+		name        string
+		tile        types.TileCoordinate
+		expectedLat float64 // Approximate center latitude
+		expectedLon float64 // Approximate center longitude
+		deltaLat    float64 // Acceptable error
+		deltaLon    float64 // Acceptable error
 	}{
 		{
 			name:        "Hanover tile z13",

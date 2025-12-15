@@ -86,7 +86,7 @@ See `internal/datasource/overpass_test.go` for integration tests.
 
 **Docker Support**:
 - Multi-stage Dockerfile created
-- docker-compose.yml for development
+- Optional Docker workflow documented
 - Justfile with common tasks
 - All system dependencies automated
 
