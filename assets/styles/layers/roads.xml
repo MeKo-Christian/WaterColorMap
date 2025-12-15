@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Map background-color="#00000000" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
+
+  <!-- Roads Layer Style -->
+  <!-- Renders roads in pure yellow (#FFFF00) for mask extraction -->
+  <!-- Line widths scale with road importance -->
+
+  <Style name="roads">
+    <Rule>
+      <!-- Motorways (highways) -->
+      <Filter>[highway] = 'motorway' or [highway] = 'motorway_link'</Filter>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <!-- Primary roads -->
+      <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <!-- Secondary roads -->
+      <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <!-- Tertiary roads -->
+      <Filter>[highway] = 'tertiary' or [highway] = 'tertiary_link'</Filter>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <!-- Residential and other roads -->
+      <Filter>[highway] = 'residential' or [highway] = 'unclassified' or [highway] = 'living_street'</Filter>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <!-- Service roads, tracks, paths -->
+      <Filter>[highway] != ''</Filter>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+  </Style>
+
+  <!-- Data Layer -->
+  <Layer name="roads" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
+    <StyleName>roads</StyleName>
+    <Datasource>
+      <Parameter name="type">ogr</Parameter>
+      <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>
+      <Parameter name="layer">roads</Parameter>
+    </Datasource>
+  </Layer>
+
+</Map>

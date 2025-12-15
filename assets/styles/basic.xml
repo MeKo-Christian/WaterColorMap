@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE Map>
+<!-- Basic Mapnik style for WaterColorMap proof-of-concept -->
+<Map srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +no_defs +over" background-color="#f8f4e8">
+
+  <!-- Memory datasource style - will be populated programmatically -->
+  <Style name="water">
+    <Rule>
+      <PolygonSymbolizer fill="#7fc8f8" fill-opacity="0.8"/>
+      <LineSymbolizer stroke="#5ba3d0" stroke-width="0.5"/>
+    </Rule>
+  </Style>
+
+  <Style name="parks">
+    <Rule>
+      <PolygonSymbolizer fill="#a8e6a3" fill-opacity="0.6"/>
+      <LineSymbolizer stroke="#7bc977" stroke-width="0.5"/>
+    </Rule>
+  </Style>
+
+  <Style name="buildings">
+    <Rule>
+      <PolygonSymbolizer fill="#d4c4b0" fill-opacity="0.7"/>
+      <LineSymbolizer stroke="#b8a890" stroke-width="0.3"/>
+    </Rule>
+  </Style>
+
+  <Style name="roads">
+    <Rule>
+      <LineSymbolizer stroke="#e8a87c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </Rule>
+  </Style>
+
+  <Style name="civic">
+    <Rule>
+      <PolygonSymbolizer fill="#f4d1a6" fill-opacity="0.7"/>
+      <LineSymbolizer stroke="#d9b88c" stroke-width="0.5"/>
+    </Rule>
+  </Style>
+
+  <!-- Layers will be added programmatically from OSM data -->
+  <!-- This is a placeholder style file for initial testing -->
+
+</Map>

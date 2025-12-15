@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Map background-color="#00000000" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
+
+  <!-- Water Layer Style -->
+  <!-- Renders water bodies in pure blue (#0000FF) for mask extraction -->
+
+  <Style name="water">
+    <Rule>
+      <PolygonSymbolizer fill="#0000FF" />
+    </Rule>
+  </Style>
+
+  <Style name="waterways">
+    <Rule>
+      <!-- Rivers and streams as lines -->
+      <Filter>[waterway] = 'river'</Filter>
+      <LineSymbolizer stroke="#0000FF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[waterway] = 'stream' or [waterway] = 'canal'</Filter>
+      <LineSymbolizer stroke="#0000FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <!-- Small waterways -->
+      <Filter>[waterway] != ''</Filter>
+      <LineSymbolizer stroke="#0000FF" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+  </Style>
+
+  <!-- Data Layers -->
+  <Layer name="water" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
+    <StyleName>water</StyleName>
+    <Datasource>
+      <Parameter name="type">ogr</Parameter>
+      <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>
+      <Parameter name="layer">water</Parameter>
+    </Datasource>
+  </Layer>
+
+  <Layer name="waterways" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
+    <StyleName>waterways</StyleName>
+    <Datasource>
+      <Parameter name="type">ogr</Parameter>
+      <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>
+      <Parameter name="layer">waterways</Parameter>
+    </Datasource>
+  </Layer>
+
+</Map>

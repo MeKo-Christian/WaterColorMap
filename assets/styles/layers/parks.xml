@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Map background-color="#00000000" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
+
+  <!-- Parks/Green Spaces Layer Style -->
+  <!-- Renders parks, forests, and green spaces in pure green (#00FF00) for mask extraction -->
+
+  <Style name="parks">
+    <Rule>
+      <!-- Parks, gardens, forests, grass, woods -->
+      <PolygonSymbolizer fill="#00FF00" />
+    </Rule>
+  </Style>
+
+  <!-- Data Layer -->
+  <Layer name="parks" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
+    <StyleName>parks</StyleName>
+    <Datasource>
+      <Parameter name="type">ogr</Parameter>
+      <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>
+      <Parameter name="layer">parks</Parameter>
+    </Datasource>
+  </Layer>
+
+</Map>

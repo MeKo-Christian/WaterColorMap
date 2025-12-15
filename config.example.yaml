@@ -1,0 +1,78 @@
+# WaterColorMap Configuration Example
+# Copy this to config.yaml and adjust as needed
+
+# Data source configuration
+data-source: "overpass"  # Options: overpass, protomaps, openmaptiles
+
+# Output settings
+output-dir: "./tiles"
+
+# Verbose logging
+verbose: false
+
+# Overpass API settings
+overpass:
+  endpoint: "https://overpass-api.de/api/interpreter"
+  timeout: 30s
+  rate-limit: 2  # requests per second
+  retry:
+    max-attempts: 3
+    backoff: 2s
+
+# Tile generation settings
+tile:
+  # Image format settings
+  width: 256
+  height: 256
+  format: "png"
+
+  # Rendering settings
+  dpi: 96
+
+  # Caching
+  cache-enabled: true
+  cache-dir: "./cache"
+
+# Test area - Hanover, Germany
+test-area:
+  name: "Hanover"
+  center:
+    lat: 52.3759
+    lon: 9.7320
+  zoom-range:
+    min: 10
+    max: 16
+
+  # Example test tile
+  test-tile:
+    zoom: 13
+    x: 4299
+    y: 2740
+
+# Feature rendering configuration
+rendering:
+  # Watercolor texture settings
+  textures:
+    path: "./assets/textures"
+    water: "water.png"
+    land: "land.png"
+    park: "park.png"
+    forest: "forest.png"
+
+  # Layer order (bottom to top)
+  layers:
+    - water
+    - land
+    - parks
+    - forests
+    - roads
+    - buildings
+
+  # Color schemes (fallback if textures not available)
+  colors:
+    water: "#a5bfdd"
+    land: "#f2efe9"
+    park: "#c8e6c9"
+    forest: "#81c784"
+    road: "#ffffff"
+    building: "#e0e0e0"

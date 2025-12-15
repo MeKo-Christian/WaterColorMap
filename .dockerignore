@@ -1,0 +1,40 @@
+# Git files
+.git
+.gitignore
+
+# Build artifacts
+watercolormap
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Generated tiles and cache
+tiles/
+cache/
+*.png
+!assets/**/*.png
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation (include in image if needed, otherwise exclude)
+docs/
+*.md
+!README.md
+
+# Test files
+*_test.go
+testdata/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/

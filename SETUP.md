@@ -1,0 +1,280 @@
+# Setup Guide
+
+Complete setup instructions for WaterColorMap development environment.
+
+## System Requirements
+
+- **OS**: Ubuntu 24.04 LTS (or compatible Linux)
+- **Go**: 1.25.0 or higher
+- **RAM**: 2GB minimum (4GB recommended)
+- **Disk**: 500MB for dependencies + space for tiles
+
+## Installation Methods
+
+### Method 1: Native Installation (Recommended for Development)
+
+#### 1. Install System Dependencies
+
+```bash
+# Update package list
+sudo apt update
+
+# Install Mapnik and build tools
+sudo apt install -y \
+    libmapnik-dev \
+    mapnik-utils \
+    python3-mapnik \
+    build-essential \
+    pkg-config \
+    git
+```
+
+#### 2. Verify Mapnik Installation
+
+```bash
+# Check Mapnik version (should be 3.1.0+)
+mapnik-config --version
+
+# Verify pkg-config can find Mapnik libraries
+mapnik-config --libs
+```
+
+#### 3. Clone Repository
+
+```bash
+git clone https://github.com/MeKo-Tech/watercolormap.git
+cd watercolormap
+```
+
+#### 4. Build Application
+
+```bash
+# Using Justfile (recommended)
+just build
+
+# Or manually
+CGO_ENABLED=1 go build -o bin/watercolormap ./cmd/watercolormap
+```
+
+#### 5. Verify Installation
+
+```bash
+# Check build succeeded
+./watercolormap version
+
+# Run tests
+just test
+```
+
+### Method 2: Docker (Recommended for Production)
+
+#### 1. Install Docker and Docker Compose
+
+```bash
+# Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Docker Compose (if not included)
+sudo apt install docker-compose-plugin
+```
+
+#### 2. Clone Repository
+
+```bash
+git clone https://github.com/MeKo-Tech/watercolormap.git
+cd watercolormap
+```
+
+#### 3. Build Docker Image
+
+```bash
+# Using Justfile
+just docker-build
+
+# Or using docker-compose
+docker-compose build
+```
+
+#### 4. Run in Container
+
+```bash
+# Show help
+docker-compose run --rm watercolormap --help
+
+# Generate a tile
+docker-compose run --rm watercolormap generate --tile z13_x4297_y2754
+```
+
+## Development Setup
+
+### Prerequisites for Development
+
+```bash
+# Install additional development tools
+go install golang.org/x/tools/cmd/goimports@latest
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+```
+
+### Configuration
+
+1. Copy example configuration:
+   ```bash
+   cp config.example.yaml config.yaml
+   ```
+
+2. Edit `config.yaml` to customize settings (optional)
+
+3. Create output directories:
+   ```bash
+   mkdir -p tiles cache testdata/output
+   ```
+
+### Running Tests
+
+```bash
+# All tests (including integration tests)
+just test
+
+# Unit tests only
+go test -short ./...
+
+# With coverage
+just test-coverage
+open coverage.html  # View in browser
+```
+
+### Development Workflow
+
+```bash
+# Format code
+just fmt
+
+# Run linter
+just lint
+
+# Run all checks (fmt + lint + test)
+just check
+
+# Build binary
+just build
+
+# Clean artifacts
+just clean
+```
+
+## Troubleshooting
+
+### Issue: "mapnik-config not found"
+
+**Solution**:
+```bash
+# Ensure libmapnik-dev is installed
+sudo apt install libmapnik-dev
+
+# Check if mapnik-config is in PATH
+which mapnik-config
+
+# If not found, it may be in /usr/bin
+ls -la /usr/bin/mapnik-config
+```
+
+### Issue: CGO compilation errors
+
+**Solution**:
+```bash
+# Ensure build-essential is installed
+sudo apt install build-essential pkg-config
+
+# Verify C++ compiler works
+g++ --version
+
+# Check Mapnik flags are correct
+mapnik-config --cflags
+mapnik-config --libs
+```
+
+### Issue: "undefined reference to mapnik::" during linking
+
+**Solution**:
+```bash
+# This should be handled automatically by the CGO directives in mapnik.go
+# If still failing, ensure libmapnik library is installed:
+dpkg -l | grep libmapnik
+
+# Should show libmapnik3.1 package
+```
+
+### Issue: Docker build fails
+
+**Solution**:
+```bash
+# Clean Docker build cache
+docker system prune -a
+
+# Rebuild with no cache
+docker-compose build --no-cache
+```
+
+### Issue: "permission denied" when running Docker
+
+**Solution**:
+```bash
+# Add user to docker group
+sudo usermod -aG docker $USER
+
+# Log out and back in, or run:
+newgrp docker
+```
+
+## Platform-Specific Notes
+
+### Ubuntu 22.04 LTS
+
+Mapnik 3.0.x is available - should work but 3.1.x recommended:
+```bash
+sudo apt install libmapnik3.0 libmapnik-dev
+```
+
+### Arch Linux
+
+```bash
+sudo pacman -S mapnik
+```
+
+### macOS (via Homebrew)
+
+```bash
+brew install mapnik
+```
+
+Note: On macOS, you may need to set CGO flags manually:
+```bash
+export CGO_LDFLAGS="$(mapnik-config --libs)"
+export CGO_CXXFLAGS="$(mapnik-config --cxxflags)"
+go build ./...
+```
+
+## Next Steps
+
+After successful installation:
+
+1. Read [docs/1.1-data-fetching-interface.md](docs/1.1-data-fetching-interface.md)
+2. Read [docs/1.4-mapnik-installation.md](docs/1.4-mapnik-installation.md)
+3. Try generating a test tile:
+   ```bash
+   ./watercolormap generate --tile z13_x4297_y2754
+   ```
+4. Review [PLAN.md](PLAN.md) for project roadmap
+
+## Getting Help
+
+- Check [docs/](docs/) for detailed documentation
+- Review [PLAN.md](PLAN.md) for implementation details
+- Open an issue on GitHub for bugs or questions
+
+## References
+
+- [Mapnik Installation Guide](https://github.com/mapnik/mapnik/wiki/UbuntuInstallation)
+- [Go CGO Documentation](https://pkg.go.dev/cmd/cgo)
+- [Docker Documentation](https://docs.docker.com/)
