@@ -6,22 +6,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    # Build tools
-    build-essential \
-    pkg-config \
-    git \
-    ca-certificates \
-    curl \
-    # Mapnik and GIS dependencies
-    libmapnik-dev \
-    mapnik-utils \
-    python3-mapnik \
-    # Additional image processing libraries (if needed later)
-    libpng-dev \
-    libjpeg-dev \
-    libfreetype6-dev \
-    # Clean up apt cache to reduce image size
-    && rm -rf /var/lib/apt/lists/*
+  # Build tools
+  build-essential \
+  pkg-config \
+  git \
+  ca-certificates \
+  curl \
+  # Mapnik and GIS dependencies
+  libmapnik-dev \
+  mapnik-utils \
+  python3-mapnik \
+  # Additional image processing libraries (if needed later)
+  libpng-dev \
+  libjpeg-dev \
+  libfreetype6-dev \
+  # Clean up apt cache to reduce image size
+  && rm -rf /var/lib/apt/lists/*
 
 # Install Go 1.25
 RUN curl -fsSL https://go.dev/dl/go1.25.0.linux-amd64.tar.gz | tar -C /usr/local -xzf -
@@ -51,10 +51,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install only runtime dependencies (not dev packages)
 RUN apt-get update && apt-get install -y \
-    libmapnik3.1 \
-    mapnik-utils \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+  libmapnik3.1 \
+  mapnik-utils \
+  ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
 RUN useradd -m -u 1000 mapuser
@@ -70,7 +70,7 @@ COPY --from=builder /app/config.example.yaml /app/config.yaml
 
 # Create directories for tiles and cache
 RUN mkdir -p /app/tiles /app/cache && \
-    chown -R mapuser:mapuser /app
+  chown -R mapuser:mapuser /app
 
 USER mapuser
 
