@@ -16,7 +16,7 @@ This document outlines the complete implementation plan for creating Stamen Wate
 
 **Documentation**: See [docs/1.1-data-fetching-interface.md](docs/1.1-data-fetching-interface.md)
 
-**Overpass API Library**: We'll use [github.com/MeKo-Christian/go-overpass](https://github.com/MeKo-Christian/go-overpass) (module: `github.com/serjvanilla/go-overpass`) for Overpass API queries. See [docs/using-go-overpass.md](docs/using-go-overpass.md) for usage details.
+**Overpass API Library**: We'll use [github.com/MeKo-Christian/go-overpass](https://github.com/MeKo-Christian/go-overpass) (module: `github.com/MeKo-Christian/go-overpass`) for Overpass API queries. See [docs/using-go-overpass.md](docs/using-go-overpass.md) for usage details.
 
 ### 1.2 Tile Storage Structure
 - [x] Design flat folder structure for output tiles (e.g., `tiles/z{zoom}_x{x}_y{y}.png`)
@@ -48,7 +48,7 @@ This document outlines the complete implementation plan for creating Stamen Wate
 - Geometry conversion using paulmach/orb
 - Rate limiting (1 concurrent request)
 
-**Test Results** (Tile z13_x4297_y2754):
+**Test Results** (Tile z13_x4317_y2692):
 - ✅ 2,531 total features fetched in 1.9s
 - ✅ 86 water features (rivers, streams)
 - ✅ 87 parks (green spaces)
@@ -246,7 +246,7 @@ This hybrid approach leverages Mapnik's proven map rendering with custom Go-base
 - ✅ GeoJSON conversion fully tested (7/7 tests passing)
 
 ### 2.5 Initial Testing
-- [ ] Select test tile covering central area (z13_x4297_y2754)
+- [ ] Select test tile covering central area (z13_x4317_y2692)
 - [ ] Render single test tile with all layers
 - [ ] Verify land layer fills entire background
 - [ ] Verify water features align with rivers/lakes

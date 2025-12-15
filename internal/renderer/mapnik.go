@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"math"
 	"os"
 
 	"github.com/MeKo-Tech/watercolormap/internal/types"
@@ -111,13 +112,20 @@ func latLonToWebMercator(lat, lon float64) (float64, float64) {
 	x := lon * earthRadius * (3.14159265359 / 180.0)
 
 	// Latitude: Mercator projection formula
-	latRad := lat * (3.14159265359 / 180.0)
-	y := earthRadius * 0.5 * (1.7453292519943295 + (1.3862943611198906 * latRad))
-
-	// Alternative accurate formula:
-	// y = earthRadius * math.Log(math.Tan(math.Pi/4.0 + latRad/2.0))
+	latRad := lat * math.Pi / 180.0
+	y := earthRadius * math.Log(math.Tan(math.Pi/4.0+latRad/2.0))
 
 	return x, y
+}
+
+// RenderCurrentToFile renders using the current map state (SRS + extent already set).
+func (r *MapnikRenderer) RenderCurrentToFile(outputPath string) error {
+	if err := r.mapObject.RenderToFile(mapnik.RenderOpts{
+		Format: "png32",
+	}, outputPath); err != nil {
+		return fmt.Errorf("failed to render to file: %w", err)
+	}
+	return nil
 }
 
 // SetBackgroundColor sets the map background color (hex string like "#f8f4e8")

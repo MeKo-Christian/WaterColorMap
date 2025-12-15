@@ -57,7 +57,7 @@ install:
     go install ./cmd/watercolormap
 
 # Generate a single tile (example for Hanover)
-generate-tile zoom="13" x="4299" y="2740":
+generate-tile zoom="13" x="4317" y="2692":
     go run ./cmd/watercolormap generate --zoom {{zoom}} --x {{x}} --y {{y}}
 
 # Setup development environment
@@ -131,4 +131,8 @@ docker-dev:
 # Generate a test tile (example)
 generate-test-tile:
     @echo "Generating test tile..."
-    ./bin/watercolormap generate --tile z13_x4297_y2754
+    ./bin/watercolormap generate --tile z13_x4317_y2692
+
+# Run integration tests (requires Mapnik installed and Overpass reachable)
+test-integration:
+    WATERCOLORMAP_INTEGRATION=1 go test ./... -v

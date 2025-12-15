@@ -14,6 +14,8 @@ import (
 )
 
 func TestMultiPassRendererCreation(t *testing.T) {
+	requireIntegration(t)
+
 	stylesDir := "../../assets/styles"
 	outputDir := "../../testdata/output/multipass"
 
@@ -35,10 +37,7 @@ func TestMultiPassRendererCreation(t *testing.T) {
 }
 
 func TestRenderTileWithRealData(t *testing.T) {
-	// Skip in short mode (this makes real API calls and renders)
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	requireIntegration(t)
 
 	// Create renderer
 	stylesDir := "../../assets/styles"
@@ -50,7 +49,7 @@ func TestRenderTileWithRealData(t *testing.T) {
 	defer renderer.Close()
 
 	// Fetch real OSM data for a test tile
-	coords := tile.NewCoords(13, 4297, 2754) // Hanover test tile
+	coords := tile.NewCoords(13, 4317, 2692) // Hanover test tile
 	t.Logf("Fetching OSM data for tile %s", coords.String())
 
 	ds := datasource.NewOverpassDataSource("")
@@ -129,6 +128,8 @@ func TestLayerPathHelpers(t *testing.T) {
 }
 
 func TestRenderLandLayerOnly(t *testing.T) {
+	requireIntegration(t)
+
 	// Test rendering just the land layer (no features required)
 	stylesDir := "../../assets/styles"
 	outputDir := "../../testdata/output/land_only"
@@ -139,7 +140,7 @@ func TestRenderLandLayerOnly(t *testing.T) {
 	}
 	defer renderer.Close()
 
-	coords := tile.NewCoords(13, 4297, 2754)
+	coords := tile.NewCoords(13, 4317, 2692)
 	bounds := coords.BoundsMercator()
 
 	// Render land layer

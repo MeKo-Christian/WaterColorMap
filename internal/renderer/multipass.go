@@ -156,6 +156,8 @@ func (r *MultiPassRenderer) renderLayer(
 
 	// Replace DATASOURCE_PLACEHOLDER with actual GeoJSON path
 	modifiedStyleXML := strings.ReplaceAll(string(styleXML), "DATASOURCE_PLACEHOLDER", geoJSONPath)
+	geoJSONLayerName := strings.TrimSuffix(filepath.Base(geoJSONPath), filepath.Ext(geoJSONPath))
+	modifiedStyleXML = strings.ReplaceAll(modifiedStyleXML, "LAYER_PLACEHOLDER", geoJSONLayerName)
 
 	// Load style into Mapnik
 	if err := r.mapnikRenderer.LoadXML(modifiedStyleXML); err != nil {
@@ -171,15 +173,7 @@ func (r *MultiPassRenderer) renderLayer(
 
 	// Render to file
 	outputPath := filepath.Join(r.outputDir, fmt.Sprintf("%s_%s.png", coords.String(), layer))
-
-	// Create a dummy TileCoordinate for compatibility with RenderToFile
-	dummyTile := types.TileCoordinate{
-		Zoom: int(coords.Z),
-		X:    int(coords.X),
-		Y:    int(coords.Y),
-	}
-
-	if err := r.mapnikRenderer.RenderToFile(dummyTile, outputPath); err != nil {
+	if err := r.mapnikRenderer.RenderCurrentToFile(outputPath); err != nil {
 		result.Error = fmt.Errorf("failed to render: %w", err)
 		return result
 	}

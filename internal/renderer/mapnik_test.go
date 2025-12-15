@@ -12,10 +12,7 @@ import (
 )
 
 func TestMapnikRenderer_Basic(t *testing.T) {
-	// Skip if not in integration test mode
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	requireIntegration(t)
 
 	// Create renderer
 	renderer, err := NewMapnikRenderer("", 256)
@@ -32,8 +29,8 @@ func TestMapnikRenderer_Basic(t *testing.T) {
 	// Test tile (Hanover)
 	tile := types.TileCoordinate{
 		Zoom: 13,
-		X:    4297,
-		Y:    2754,
+		X:    4317,
+		Y:    2692,
 	}
 
 	// Create a simple test image
@@ -56,10 +53,7 @@ func TestMapnikRenderer_Basic(t *testing.T) {
 }
 
 func TestMapnikRenderer_WithOSMData(t *testing.T) {
-	// Skip if not in integration test mode
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	requireIntegration(t)
 
 	// Create output directory
 	outputDir := "../../testdata/output"
@@ -71,8 +65,8 @@ func TestMapnikRenderer_WithOSMData(t *testing.T) {
 	ds := datasource.NewOverpassDataSource("")
 	tile := types.TileCoordinate{
 		Zoom: 13,
-		X:    4297,
-		Y:    2754,
+		X:    4317,
+		Y:    2692,
 	}
 
 	t.Log("Fetching OSM data for tile...")
@@ -116,10 +110,7 @@ func TestMapnikRenderer_WithOSMData(t *testing.T) {
 }
 
 func TestMapnikRenderer_RenderToFile(t *testing.T) {
-	// Skip if not in integration test mode
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	requireIntegration(t)
 
 	// Create output directory
 	outputDir := "../../testdata/output"
@@ -139,8 +130,8 @@ func TestMapnikRenderer_RenderToFile(t *testing.T) {
 	// Test tile
 	tile := types.TileCoordinate{
 		Zoom: 13,
-		X:    4297,
-		Y:    2754,
+		X:    4317,
+		Y:    2692,
 	}
 
 	// Render directly to file

@@ -61,10 +61,7 @@ func verifyHanoverFeatures(t *testing.T, counts map[string]int) {
 // - Maschpark, Stadtpark (parks)
 // - Major roads and streets
 func TestFetchHanoverTile(t *testing.T) {
-	// Skip in short mode (this makes real API calls)
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	requireIntegration(t)
 
 	// Create datasource
 	ds := NewOverpassDataSource("")
@@ -77,8 +74,8 @@ func TestFetchHanoverTile(t *testing.T) {
 	// Hanover tile coordinates
 	tile := types.TileCoordinate{
 		Zoom: 13,
-		X:    4297,
-		Y:    2754,
+		X:    4317,
+		Y:    2692,
 	}
 
 	t.Logf("Fetching tile: %s", tile.String())
@@ -160,7 +157,7 @@ func TestTileCoordinateConversion(t *testing.T) {
 	}{
 		{
 			name:        "Hanover tile z13",
-			tile:        types.TileCoordinate{Zoom: 13, X: 4297, Y: 2754},
+			tile:        types.TileCoordinate{Zoom: 13, X: 4317, Y: 2692},
 			expectedLat: 52.3737, // Central Hanover latitude
 			expectedLon: 9.7339,  // Central Hanover longitude
 			deltaLat:    0.02,    // ~2km tolerance
@@ -202,9 +199,7 @@ func TestTileCoordinateConversion(t *testing.T) {
 
 // TestMultipleTiles tests fetching multiple adjacent tiles
 func TestMultipleTiles(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+	requireIntegration(t)
 
 	ds := NewOverpassDataSource("")
 	defer ds.Close()
@@ -214,9 +209,9 @@ func TestMultipleTiles(t *testing.T) {
 
 	// Test adjacent tiles around Hanover
 	tiles := []types.TileCoordinate{
-		{Zoom: 13, X: 4297, Y: 2754}, // Center
-		{Zoom: 13, X: 4298, Y: 2754}, // East
-		{Zoom: 13, X: 4297, Y: 2755}, // South
+		{Zoom: 13, X: 4317, Y: 2692}, // Center
+		{Zoom: 13, X: 4318, Y: 2692}, // East
+		{Zoom: 13, X: 4317, Y: 2693}, // South
 	}
 
 	for _, tile := range tiles {
