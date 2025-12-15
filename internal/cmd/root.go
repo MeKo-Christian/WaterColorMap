@@ -34,9 +34,15 @@ func init() {
 	rootCmd.PersistentFlags().String("output-dir", "./tiles", "Output directory for generated tiles")
 	rootCmd.PersistentFlags().Bool("verbose", false, "Enable verbose logging")
 
-	viper.BindPFlag("data-source", rootCmd.PersistentFlags().Lookup("data-source"))
-	viper.BindPFlag("output-dir", rootCmd.PersistentFlags().Lookup("output-dir"))
-	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	if err := viper.BindPFlag("data-source", rootCmd.PersistentFlags().Lookup("data-source")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
+	if err := viper.BindPFlag("output-dir", rootCmd.PersistentFlags().Lookup("output-dir")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
+	if err := viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
 }
 
 func initConfig() {

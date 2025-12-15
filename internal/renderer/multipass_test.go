@@ -81,11 +81,12 @@ func TestRenderTileWithRealData(t *testing.T) {
 	// Verify results
 	t.Logf("Render results:")
 	for layer, layerResult := range result.Layers {
-		if layerResult.Error != nil {
+		switch {
+		case layerResult.Error != nil:
 			t.Logf("  %s: ERROR - %v", layer, layerResult.Error)
-		} else if layerResult.OutputPath == "" {
+		case layerResult.OutputPath == "":
 			t.Logf("  %s: SKIPPED (no features)", layer)
-		} else {
+		default:
 			t.Logf("  %s: SUCCESS - %s", layer, layerResult.OutputPath)
 
 			// Verify file exists

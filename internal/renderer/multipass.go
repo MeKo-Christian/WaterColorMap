@@ -143,7 +143,9 @@ func (r *MultiPassRenderer) renderLayer(
 		result.Error = fmt.Errorf("failed to write GeoJSON: %w", err)
 		return result
 	}
-	defer os.Remove(geoJSONPath) // Clean up temp file
+	defer func() {
+		os.Remove(geoJSONPath) // nolint:errcheck // Best-effort cleanup
+	}()
 
 	// Load style XML and replace datasource placeholder
 	styleXML, err := os.ReadFile(stylePath)

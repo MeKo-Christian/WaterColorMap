@@ -3,16 +3,16 @@ module github.com/MeKo-Tech/watercolormap
 go 1.25.0
 
 require (
+	github.com/MeKo-Christian/go-overpass v0.0.0-20251215140656-c8487ded5547
+	github.com/aquilax/go-perlin v1.1.0
+	github.com/disintegration/gift v1.2.1
 	github.com/omniscale/go-mapnik/v2 v2.0.1
 	github.com/paulmach/orb v0.12.0
-	github.com/serjvanilla/go-overpass v0.0.0-20220918094045-58606372f808
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 )
 
 require (
-	github.com/aquilax/go-perlin v1.1.0 // indirect
-	github.com/disintegration/gift v1.2.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

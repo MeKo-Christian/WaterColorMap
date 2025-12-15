@@ -22,10 +22,18 @@ func init() {
 	generateCmd.Flags().IntP("y", "y", 0, "Y tile coordinate")
 	generateCmd.Flags().Bool("force", false, "Force regeneration even if tile exists")
 
-	viper.BindPFlag("generate.zoom", generateCmd.Flags().Lookup("zoom"))
-	viper.BindPFlag("generate.x", generateCmd.Flags().Lookup("x"))
-	viper.BindPFlag("generate.y", generateCmd.Flags().Lookup("y"))
-	viper.BindPFlag("generate.force", generateCmd.Flags().Lookup("force"))
+	if err := viper.BindPFlag("generate.zoom", generateCmd.Flags().Lookup("zoom")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
+	if err := viper.BindPFlag("generate.x", generateCmd.Flags().Lookup("x")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
+	if err := viper.BindPFlag("generate.y", generateCmd.Flags().Lookup("y")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
+	if err := viper.BindPFlag("generate.force", generateCmd.Flags().Lookup("force")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {

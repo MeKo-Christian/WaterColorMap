@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/MeKo-Christian/go-overpass"
 	"github.com/MeKo-Tech/watercolormap/internal/types"
 	"github.com/paulmach/orb"
-	"github.com/serjvanilla/go-overpass"
 )
 
 // OverpassDataSource fetches OSM data from Overpass API

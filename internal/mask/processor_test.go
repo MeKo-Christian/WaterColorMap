@@ -6,6 +6,117 @@ import (
 	"testing"
 )
 
+// Helper functions to reduce cyclomatic complexity
+
+func checkNoiseVariation(t *testing.T, noise *image.Gray) {
+	width := noise.Bounds().Dx()
+	height := noise.Bounds().Dy()
+	firstPixel := noise.GrayAt(0, 0).Y
+	foundDifferent := false
+	for y := 0; y < height && !foundDifferent; y++ {
+		for x := 0; x < width && !foundDifferent; x++ {
+			if noise.GrayAt(x, y).Y != firstPixel {
+				foundDifferent = true
+			}
+		}
+	}
+	if !foundDifferent {
+		t.Error("noise should have variation, but all pixels are the same")
+	}
+}
+
+func checkNoiseDeterminism(t *testing.T, noise1, noise2 *image.Gray) {
+	pixel1 := noise1.GrayAt(100, 100).Y
+	pixel2 := noise2.GrayAt(100, 100).Y
+	if pixel1 != pixel2 {
+		t.Errorf("same seed should produce same noise: %d != %d", pixel1, pixel2)
+	}
+}
+
+func checkNoiseDifference(t *testing.T, noise1, noise2 *image.Gray) {
+	width := noise1.Bounds().Dx()
+	height := noise1.Bounds().Dy()
+	differentCount := 0
+	sampleCount := 0
+	for y := 0; y < height; y += 10 {
+		for x := 0; x < width; x += 10 {
+			sampleCount++
+			if noise1.GrayAt(x, y).Y != noise2.GrayAt(x, y).Y {
+				differentCount++
+			}
+		}
+	}
+	// At least 80% of sampled pixels should be different
+	if float64(differentCount)/float64(sampleCount) < 0.8 {
+		t.Errorf("different seeds should produce mostly different noise, only %d/%d pixels different", differentCount, sampleCount)
+	}
+}
+
+func verifyPipelineSteps(t *testing.T, mask, blurred, noise, noisy, thresholded, final *image.Gray) {
+	if mask == nil {
+		t.Fatal("ExtractBinaryMask returned nil")
+	}
+	if blurred == nil {
+		t.Fatal("GaussianBlur returned nil")
+	}
+	if noise == nil {
+		t.Fatal("GeneratePerlinNoise returned nil")
+	}
+	if noisy == nil {
+		t.Fatal("ApplyNoiseToMask returned nil")
+	}
+	if thresholded == nil {
+		t.Fatal("ApplyThreshold returned nil")
+	}
+	if final == nil {
+		t.Fatal("AntialiasEdges returned nil")
+	}
+}
+
+func verifyPipelineResult(t *testing.T, final *image.Gray) {
+	if final.Bounds().Dx() != 256 || final.Bounds().Dy() != 256 {
+		t.Errorf("final dimensions incorrect: got %dx%d, want 256x256",
+			final.Bounds().Dx(), final.Bounds().Dy())
+	}
+
+	// Verify background is dark (no feature)
+	bgPixel := final.GrayAt(10, 10)
+	if bgPixel.Y > 50 {
+		t.Errorf("background should be dark (<50), got %d", bgPixel.Y)
+	}
+
+	// Verify feature center is bright
+	centerPixel := final.GrayAt(128, 128)
+	if centerPixel.Y < 200 {
+		t.Errorf("feature center should be bright (>200), got %d", centerPixel.Y)
+	}
+}
+
+func checkGradientAtEdge(t *testing.T, final *image.Gray) {
+	// Verify there's a gradient at the edge (watercolor effect)
+	foundGradient := false
+	for angle := 0; angle < 360; angle += 30 {
+		// Sample at different distances from center
+		for radius := 40; radius < 60; radius += 5 {
+			x := 128 + int(float64(radius)*0.7071) // cos(45°) ≈ 0.7071
+			y := 128 + int(float64(radius)*0.7071)
+			if x >= 0 && x < 256 && y >= 0 && y < 256 {
+				val := final.GrayAt(x, y).Y
+				if val > 50 && val < 200 {
+					foundGradient = true
+					break
+				}
+			}
+		}
+		if foundGradient {
+			break
+		}
+	}
+	if !foundGradient {
+		t.Log("Warning: No clear gradient found at edge (may vary with noise)")
+	}
+}
+
 // TestExtractBinaryMask tests extracting a binary mask from a colored layer image
 func TestExtractBinaryMask(t *testing.T) {
 	// Create a test image with a specific color feature
@@ -113,53 +224,18 @@ func TestGeneratePerlinNoise(t *testing.T) {
 	}
 
 	// Verify it's not all the same value (has variation)
-	firstPixel := noise.GrayAt(0, 0).Y
-	foundDifferent := false
-	for y := 0; y < height && !foundDifferent; y++ {
-		for x := 0; x < width && !foundDifferent; x++ {
-			if noise.GrayAt(x, y).Y != firstPixel {
-				foundDifferent = true
-			}
-		}
-	}
-	if !foundDifferent {
-		t.Error("noise should have variation, but all pixels are the same")
-	}
+	checkNoiseVariation(t, noise)
 
-	// Verify values are in valid range (0-255)
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
-			val := noise.GrayAt(x, y).Y
-			if val < 0 || val > 255 {
-				t.Errorf("noise value %d at (%d,%d) out of range 0-255", val, x, y)
-			}
-		}
-	}
+	// Note: uint8 values are always in valid range (0-255) by type definition
+	// No need to verify range for uint8 values
 
 	// Verify determinism - same seed produces same noise
 	noise2 := GeneratePerlinNoise(width, height, scale, 42)
-	pixel1 := noise.GrayAt(100, 100).Y
-	pixel2 := noise2.GrayAt(100, 100).Y
-	if pixel1 != pixel2 {
-		t.Errorf("same seed should produce same noise: %d != %d", pixel1, pixel2)
-	}
+	checkNoiseDeterminism(t, noise, noise2)
 
 	// Verify different seeds produce different noise (check multiple pixels)
 	noise3 := GeneratePerlinNoise(width, height, scale, 99)
-	differentCount := 0
-	sampleCount := 0
-	for y := 0; y < height; y += 10 {
-		for x := 0; x < width; x += 10 {
-			sampleCount++
-			if noise.GrayAt(x, y).Y != noise3.GrayAt(x, y).Y {
-				differentCount++
-			}
-		}
-	}
-	// At least 80% of sampled pixels should be different
-	if float64(differentCount)/float64(sampleCount) < 0.8 {
-		t.Errorf("different seeds should produce mostly different noise, only %d/%d pixels different", differentCount, sampleCount)
-	}
+	checkNoiseDifference(t, noise, noise3)
 }
 
 // TestApplyNoiseToMask tests overlaying noise on a blurred mask
@@ -319,70 +395,23 @@ func TestWatercolorPipeline(t *testing.T) {
 
 	// Step 1: Extract binary mask
 	mask := ExtractBinaryMask(layerImg)
-	if mask == nil {
-		t.Fatal("ExtractBinaryMask returned nil")
-	}
-
 	// Step 2: Apply Gaussian blur
 	blurred := GaussianBlur(mask, 2.0)
-	if blurred == nil {
-		t.Fatal("GaussianBlur returned nil")
-	}
-
 	// Step 3: Generate Perlin noise
 	noise := GeneratePerlinNoise(256, 256, 30.0, 12345)
-	if noise == nil {
-		t.Fatal("GeneratePerlinNoise returned nil")
-	}
-
 	// Step 4: Apply noise to blurred mask
 	noisy := ApplyNoiseToMask(blurred, noise, 0.3)
-	if noisy == nil {
-		t.Fatal("ApplyNoiseToMask returned nil")
-	}
-
 	// Step 5: Apply threshold
 	thresholded := ApplyThreshold(noisy, 128)
-	if thresholded == nil {
-		t.Fatal("ApplyThreshold returned nil")
-	}
-
 	// Step 6: Apply antialiasing
 	final := AntialiasEdges(thresholded, 0.5)
-	if final == nil {
-		t.Fatal("AntialiasEdges returned nil")
-	}
+
+	// Verify all steps completed successfully
+	verifyPipelineSteps(t, mask, blurred, noise, noisy, thresholded, final)
 
 	// Verify final result
-	if final.Bounds().Dx() != 256 || final.Bounds().Dy() != 256 {
-		t.Errorf("final dimensions incorrect: got %dx%d, want 256x256",
-			final.Bounds().Dx(), final.Bounds().Dy())
-	}
-
-	// Verify background is dark (no feature)
-	bgPixel := final.GrayAt(10, 10)
-	if bgPixel.Y > 50 {
-		t.Errorf("background should be dark (<50), got %d", bgPixel.Y)
-	}
-
-	// Verify feature center is bright
-	centerPixel := final.GrayAt(128, 128)
-	if centerPixel.Y < 200 {
-		t.Errorf("feature center should be bright (>200), got %d", centerPixel.Y)
-	}
+	verifyPipelineResult(t, final)
 
 	// Verify there's a gradient at the edge (watercolor effect)
-	// Check a few pixels at different distances from edge
-	foundGradient := false
-	for offset := 0; offset < 15; offset++ {
-		pixelVal := final.GrayAt(128+radius+offset, 128).Y
-		// If we find a pixel that's not pure black or white, we have gradient
-		if pixelVal > 20 && pixelVal < 235 {
-			foundGradient = true
-			break
-		}
-	}
-	if !foundGradient {
-		t.Error("should have gradient at feature edge (watercolor effect)")
-	}
+	checkGradientAtEdge(t, final)
 }

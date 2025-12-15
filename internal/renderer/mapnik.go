@@ -176,14 +176,18 @@ func (r *MapnikRenderer) LoadXML(xmlString string) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath) // Clean up temp file after loading
+	defer func() {
+		os.Remove(tmpPath) // nolint:errcheck // Best-effort cleanup
+	}()
 
 	// Write XML to temp file
 	if _, err := tmpFile.WriteString(xmlString); err != nil {
-		tmpFile.Close()
+		tmpFile.Close() // nolint:errcheck // Already returning an error
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
 
 	// Load the style file
 	if err := r.mapObject.Load(tmpPath); err != nil {

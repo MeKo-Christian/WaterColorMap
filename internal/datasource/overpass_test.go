@@ -8,6 +8,53 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/types"
 )
 
+// Helper functions to reduce cyclomatic complexity
+
+func logSampleFeatures(t *testing.T, data *types.TileData) {
+	t.Log("\nSample water features:")
+	for i, f := range data.Features.Water {
+		if i >= 3 {
+			break
+		}
+		t.Logf("  - %s: %s (type: %T)", f.ID, f.Name, f.Geometry)
+	}
+
+	t.Log("\nSample parks:")
+	for i, f := range data.Features.Parks {
+		if i >= 3 {
+			break
+		}
+		t.Logf("  - %s: %s (type: %T)", f.ID, f.Name, f.Geometry)
+	}
+
+	t.Log("\nSample roads:")
+	for i, f := range data.Features.Roads {
+		if i >= 5 {
+			break
+		}
+		name := f.Name
+		if name == "" {
+			name = "(unnamed)"
+		}
+		t.Logf("  - %s: %s (type: %T)", f.ID, name, f.Geometry)
+	}
+}
+
+func verifyHanoverFeatures(t *testing.T, counts map[string]int) {
+	if counts["total"] == 0 {
+		t.Error("Expected to find features, but got none")
+	}
+	if counts["water"] == 0 {
+		t.Error("Expected to find water features (Leine river) in Hanover tile")
+	}
+	if counts["parks"] == 0 {
+		t.Error("Expected to find parks in Hanover tile")
+	}
+	if counts["roads"] == 0 {
+		t.Error("Expected to find roads in Hanover tile")
+	}
+}
+
 // TestFetchHanoverTile tests fetching data for a tile covering central Hanover
 // Tile z13_x4297_y2754 covers downtown Hanover including:
 // - Leine river (water)
@@ -66,53 +113,10 @@ func TestFetchHanoverTile(t *testing.T) {
 	t.Logf("  Total: %d", counts["total"])
 
 	// Assertions
-	if counts["total"] == 0 {
-		t.Error("Expected to find features, but got none")
-	}
-
-	// Hanover should have water features (Leine river)
-	if counts["water"] == 0 {
-		t.Error("Expected to find water features (Leine river) in Hanover tile")
-	}
-
-	// Hanover should have parks (Maschpark, Stadtpark)
-	if counts["parks"] == 0 {
-		t.Error("Expected to find parks in Hanover tile")
-	}
-
-	// Hanover should have roads
-	if counts["roads"] == 0 {
-		t.Error("Expected to find roads in Hanover tile")
-	}
+	verifyHanoverFeatures(t, counts)
 
 	// Print sample features
-	t.Log("\nSample water features:")
-	for i, f := range data.Features.Water {
-		if i >= 3 {
-			break
-		}
-		t.Logf("  - %s: %s (type: %T)", f.ID, f.Name, f.Geometry)
-	}
-
-	t.Log("\nSample parks:")
-	for i, f := range data.Features.Parks {
-		if i >= 3 {
-			break
-		}
-		t.Logf("  - %s: %s (type: %T)", f.ID, f.Name, f.Geometry)
-	}
-
-	t.Log("\nSample roads:")
-	for i, f := range data.Features.Roads {
-		if i >= 5 {
-			break
-		}
-		name := f.Name
-		if name == "" {
-			name = "(unnamed)"
-		}
-		t.Logf("  - %s: %s (type: %T)", f.ID, name, f.Geometry)
-	}
+	logSampleFeatures(t, data)
 
 	// Test caching
 	t.Log("\n--- Testing cache ---")
