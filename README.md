@@ -167,4 +167,4 @@ docs/                           # Design notes and phase docs
 
 ## License
 
-License is not yet specified. If you plan to publish or redistribute, add a license file first.
+MIT License — see [LICENSE](LICENSE) for details.
