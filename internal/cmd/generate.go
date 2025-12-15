@@ -26,6 +26,9 @@ func init() {
 	generateCmd.Flags().IntP("x", "x", 0, "X tile coordinate")
 	generateCmd.Flags().IntP("y", "y", 0, "Y tile coordinate")
 	generateCmd.Flags().Bool("force", false, "Force regeneration even if tile exists")
+	generateCmd.Flags().Int("tile-size", 256, "Tile size in pixels (typically 256 or 512 for Hi-DPI)")
+	generateCmd.Flags().Int64("seed", 1337, "Deterministic seed for noise/texture alignment")
+	generateCmd.Flags().Bool("keep-layers", false, "Keep intermediate rendered layer PNGs for debugging")
 
 	if err := viper.BindPFlag("generate.zoom", generateCmd.Flags().Lookup("zoom")); err != nil {
 		panic(fmt.Sprintf("failed to bind flag: %v", err))
@@ -39,6 +42,15 @@ func init() {
 	if err := viper.BindPFlag("generate.force", generateCmd.Flags().Lookup("force")); err != nil {
 		panic(fmt.Sprintf("failed to bind flag: %v", err))
 	}
+	if err := viper.BindPFlag("generate.tile_size", generateCmd.Flags().Lookup("tile-size")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
+	if err := viper.BindPFlag("generate.seed", generateCmd.Flags().Lookup("seed")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
+	if err := viper.BindPFlag("generate.keep_layers", generateCmd.Flags().Lookup("keep-layers")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
@@ -48,6 +60,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	force := viper.GetBool("generate.force")
 	outputDir := viper.GetString("output-dir")
 	dataSourceName := viper.GetString("data-source")
+	tileSize := viper.GetInt("generate.tile_size")
+	seed := viper.GetInt64("generate.seed")
+	keepLayers := viper.GetBool("generate.keep_layers")
 
 	if logger == nil {
 		initLogging()
@@ -60,6 +75,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		"output_dir", outputDir,
 		"force", force,
 		"data_source", dataSourceName,
+		"tile_size", tileSize,
+		"seed", seed,
+		"keep_layers", keepLayers,
 	)
 
 	if zoom < 0 || x < 0 || y < 0 {
@@ -77,19 +95,20 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	stylesDir := filepath.Join("assets", "styles")
 	texturesDir := filepath.Join("assets", "textures")
 
-	const tileSize = 256
-	const seed int64 = 1337
-
-	gen, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize, seed, logger)
+	gen, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize, seed, keepLayers, logger)
 	if err != nil {
 		return fmt.Errorf("failed to init generator: %w", err)
 	}
 
-	path, err := gen.Generate(context.Background(), coords, force)
+	path, layersDir, err := gen.Generate(context.Background(), coords, force)
 	if err != nil {
 		return fmt.Errorf("failed to generate tile: %w", err)
 	}
 
-	logger.Info("Tile generated", "coords", coords.String(), "path", path)
+	logFields := []interface{}{"coords", coords.String(), "path", path}
+	if keepLayers && layersDir != "" {
+		logFields = append(logFields, "layers_dir", layersDir)
+	}
+	logger.Info("Tile generated", logFields...)
 	return nil
 }

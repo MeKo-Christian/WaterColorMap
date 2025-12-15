@@ -21,6 +21,13 @@ type MapnikRenderer struct {
 	tileSize  int
 }
 
+func (r *MapnikRenderer) resetMapObject() {
+	if r.mapObject != nil {
+		r.mapObject.Free()
+	}
+	r.mapObject = mapnik.NewSized(r.tileSize, r.tileSize)
+}
+
 // NewMapnikRenderer creates a new Mapnik renderer
 func NewMapnikRenderer(styleFile string, tileSize int) (*MapnikRenderer, error) {
 	// Initialize Mapnik (must be called once)
@@ -169,6 +176,9 @@ func parseHexColor(s string) (color.NRGBA, error) {
 
 // LoadStyle loads a Mapnik XML style file
 func (r *MapnikRenderer) LoadStyle(styleFile string) error {
+	// Mapnik map instances can retain layers/styles across loads depending on the binding.
+	// Reset the map object to ensure isolation between multi-pass layer renders.
+	r.resetMapObject()
 	if err := r.mapObject.Load(styleFile); err != nil {
 		return fmt.Errorf("failed to load style: %w", err)
 	}
@@ -178,6 +188,9 @@ func (r *MapnikRenderer) LoadStyle(styleFile string) error {
 // LoadXML loads a Mapnik style from XML string
 // It writes the XML to a temporary file and loads it
 func (r *MapnikRenderer) LoadXML(xmlString string) error {
+	// Reset the map object to avoid layer/style accumulation across multiple loads.
+	r.resetMapObject()
+
 	// Create temporary file for the XML
 	tmpFile, err := os.CreateTemp("", "mapnik-style-*.xml")
 	if err != nil {

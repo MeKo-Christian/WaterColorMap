@@ -20,6 +20,7 @@ go.work
 # Generated tiles
 tiles/*.png
 tiles/**/*.png
+testdata/output/
 
 # Cache directories
 cache/

@@ -41,6 +41,10 @@ func NewMultiPassRenderer(stylesDir, outputDir string, tileSize int) (*MultiPass
 		return nil, fmt.Errorf("failed to create Mapnik renderer: %w", err)
 	}
 
+	// Set buffer size to ensure features near tile edges render correctly
+	// A buffer of 128 pixels (50% of tile size) ensures smooth edge alignment
+	mapnikRenderer.SetBufferSize(128)
+
 	// Create temp directory for GeoJSON files
 	tempDir := filepath.Join(os.TempDir(), "watercolormap")
 	if err := os.MkdirAll(tempDir, 0755); err != nil {

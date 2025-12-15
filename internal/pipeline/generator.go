@@ -25,17 +25,18 @@ type DataSource interface {
 
 // Generator wires datasource, rendering, watercolor, and compositing into a single step.
 type Generator struct {
-	ds        DataSource
-	stylesDir string
-	outputDir string
-	textures  map[geojson.LayerType]image.Image
-	tileSize  int
-	seed      int64
-	logger    *slog.Logger
+	ds         DataSource
+	stylesDir  string
+	outputDir  string
+	textures   map[geojson.LayerType]image.Image
+	tileSize   int
+	seed       int64
+	keepLayers bool
+	logger     *slog.Logger
 }
 
 // NewGenerator loads textures and prepares a generator.
-func NewGenerator(ds DataSource, stylesDir, texturesDir, outputDir string, tileSize int, seed int64, logger *slog.Logger) (*Generator, error) {
+func NewGenerator(ds DataSource, stylesDir, texturesDir, outputDir string, tileSize int, seed int64, keepLayers bool, logger *slog.Logger) (*Generator, error) {
 	if tileSize <= 0 {
 		return nil, fmt.Errorf("tile size must be positive")
 	}
@@ -46,29 +47,30 @@ func NewGenerator(ds DataSource, stylesDir, texturesDir, outputDir string, tileS
 	}
 
 	return &Generator{
-		ds:        ds,
-		stylesDir: stylesDir,
-		outputDir: outputDir,
-		textures:  textures,
-		tileSize:  tileSize,
-		seed:      seed,
-		logger:    logger,
+		ds:         ds,
+		stylesDir:  stylesDir,
+		outputDir:  outputDir,
+		textures:   textures,
+		tileSize:   tileSize,
+		seed:       seed,
+		keepLayers: keepLayers,
+		logger:     logger,
 	}, nil
 }
 
 // Generate renders, paints, composites, and writes the final tile PNG.
-// Returns the final tile path.
-func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool) (string, error) {
+// Returns the final tile path and (optionally) the layer directory when kept.
+func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool) (string, string, error) {
 	finalPath := filepath.Join(g.outputDir, coords.Path("png"))
 	if !force {
 		if _, err := os.Stat(finalPath); err == nil {
 			g.log().Info("Tile already exists; skipping", "coords", coords.String(), "path", finalPath)
-			return finalPath, nil
+			return finalPath, "", nil
 		}
 	}
 
 	if err := os.MkdirAll(g.outputDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create output dir: %w", err)
+		return "", "", fmt.Errorf("failed to create output dir: %w", err)
 	}
 
 	g.log().Info("Fetching tile data", "coords", coords.String())
@@ -78,25 +80,31 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		Y:    int(coords.Y),
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch tile data: %w", err)
+		return "", "", fmt.Errorf("failed to fetch tile data: %w", err)
 	}
 
 	layerDir, err := os.MkdirTemp("", "watercolormap-layers-*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp layer dir: %w", err)
+		return "", "", fmt.Errorf("failed to create temp layer dir: %w", err)
 	}
-	defer os.RemoveAll(layerDir) // nolint:errcheck // best effort cleanup
+	layerDirReturn := ""
+	if g.keepLayers {
+		layerDirReturn = layerDir
+		g.log().Info("Keeping rendered layer PNGs", "coords", coords.String(), "dir", layerDir)
+	} else {
+		defer os.RemoveAll(layerDir) // nolint:errcheck // best effort cleanup
+	}
 
 	g.log().Info("Rendering layers", "coords", coords.String())
-	mpRenderer, err := renderer.NewMultiPassRenderer(g.stylesDir, layerDir)
+	mpRenderer, err := renderer.NewMultiPassRenderer(g.stylesDir, layerDir, g.tileSize)
 	if err != nil {
-		return "", fmt.Errorf("failed to create multipass renderer: %w", err)
+		return "", "", fmt.Errorf("failed to create multipass renderer: %w", err)
 	}
 	defer mpRenderer.Close() // nolint:errcheck
 
 	renderResult, err := mpRenderer.RenderTile(coords, data)
 	if err != nil {
-		return "", fmt.Errorf("failed to render layers: %w", err)
+		return "", "", fmt.Errorf("failed to render layers: %w", err)
 	}
 
 	params := watercolor.DefaultParams(g.tileSize, g.seed, g.textures)
@@ -111,18 +119,18 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 			continue // layer had no features
 		}
 		if res.Error != nil {
-			return "", fmt.Errorf("failed to render layer %s: %w", layer, res.Error)
+			return "", "", fmt.Errorf("failed to render layer %s: %w", layer, res.Error)
 		}
 
 		g.log().Debug("Painting layer", "layer", layer, "coords", coords.String())
 		img, err := readPNG(res.OutputPath)
 		if err != nil {
-			return "", fmt.Errorf("failed to read layer %s: %w", layer, err)
+			return "", "", fmt.Errorf("failed to read layer %s: %w", layer, err)
 		}
 
 		paintedLayer, err := watercolor.PaintLayer(img, layer, params)
 		if err != nil {
-			return "", fmt.Errorf("failed to paint layer %s: %w", layer, err)
+			return "", "", fmt.Errorf("failed to paint layer %s: %w", layer, err)
 		}
 
 		painted[layer] = paintedLayer
@@ -130,21 +138,21 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 
 	composited, err := composite.CompositeLayers(painted, nil, g.tileSize)
 	if err != nil {
-		return "", fmt.Errorf("failed to composite layers: %w", err)
+		return "", "", fmt.Errorf("failed to composite layers: %w", err)
 	}
 
 	g.log().Info("Writing final tile", "coords", coords.String(), "path", finalPath)
 	outFile, err := os.Create(finalPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to create tile file: %w", err)
+		return "", "", fmt.Errorf("failed to create tile file: %w", err)
 	}
 	defer outFile.Close() // nolint:errcheck
 
 	if err := png.Encode(outFile, composited); err != nil {
-		return "", fmt.Errorf("failed to encode final tile: %w", err)
+		return "", "", fmt.Errorf("failed to encode final tile: %w", err)
 	}
 
-	return finalPath, nil
+	return finalPath, layerDirReturn, nil
 }
 
 func readPNG(path string) (image.Image, error) {

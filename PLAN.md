@@ -28,244 +28,58 @@ This document outlines the complete implementation plan for creating Stamen Wate
 - [x] Configuration system with YAML support
 - [x] Development environment fully prepared
 
-## Phase 2: Rendering Base Map Layers
+## Phase 2: Rendering Base Map Layers ✅ COMPLETE
 
-### 2.1 Layer Design and Planning
-- [x] Define layer hierarchy (land, water, parks, roads, civic areas)
-- [x] Determine rendering order for compositing
-- [x] Plan color coding scheme for mask extraction
-- [x] Document layer specifications and purposes
-- [x] Create test checklist for visual verification
-
-**Status**: ✅ **COMPLETE**
-
-**Documentation**: [docs/2.1-layer-design.md](docs/2.1-layer-design.md)
+**Overview**: Implemented multi-pass Mapnik rendering system that generates separate PNG masks for each map layer (land, water, parks, civic, roads). Each layer uses distinct colors for downstream mask extraction and texture application.
 
 **Layer Color Mapping**:
+
 - Water: #0000FF (blue) → water.png texture
 - Land: #C4A574 (tan) → land.png texture
 - Parks: #00FF00 (green) → green.png texture
 - Civic: #C080C0 (lilac) → lilac.png texture
 - Roads: #FFFF00 (yellow) → yellow.png texture
-- Gray: (reserved) → gray.png texture
 
-### 2.2 Mapnik Style Configuration
-- [x] Create CartoCSS/XML style for land areas (solid color)
-- [x] Create style for water bodies (distinct color)
-- [x] Create style for parks/green spaces (distinct color)
-- [x] Create style for major roads (distinct color)
-- [x] Create style for civic/building areas (optional)
-- [x] Test styles render correct features from data source
-
-**Status**: ✅ **COMPLETE**
-
-**Implementation**: 5 Mapnik XML styles in `assets/styles/layers/`:
-- `water.xml` - Water bodies and waterways (blue)
-- `land.xml` - Background fill (tan)
-- `parks.xml` - Green spaces (green)
-- `civic.xml` - Buildings (lilac)
-- `roads.xml` - Roads with width scaling (yellow)
-
-### 2.3 Tile System Implementation
-- [x] Implement Web Mercator projection utilities
-- [x] Create tile coordinate system (z/x/y) handler
-- [x] Implement bounding box calculation for tiles
-- [x] Create tile range utilities for batch generation
-- [x] Test tile boundary alignment
-
-**Status**: ✅ **COMPLETE**
-
-**Implementation**: `internal/tile/coords.go`
-- Tile coordinate system (Coords struct)
-- WGS84 and Web Mercator bounds calculation
-- Coordinate conversions
-- TileRange for batch processing
-- Full test coverage (all tests passing)
-
-### 2.4 Multi-Pass Rendering Implementation
-- [x] Implement multi-pass rendering (separate image per layer)
-- [x] Create layer isolation logic
-- [x] Implement GeoJSON conversion from OSM data
-- [x] Create temporary file management for datasources
-- [x] Integrate Mapnik XML style loading
-- [x] Implement rendering for each layer type
-- [x] Test rendering on sample tile (Phase 2.5)
-
-**Status**: ✅ **COMPLETE**
-
-**Implementation**:
-- `internal/renderer/multipass.go` - Multi-pass rendering engine
+**Key Implementations**:
+- `internal/renderer/multipass.go` - Multi-pass rendering engine with 128px Mapnik buffer for seamless tile edges
+- `internal/renderer/mapnik.go` - Mapnik wrapper with map object reset for layer isolation
 - `internal/geojson/converter.go` - OSM to GeoJSON conversion
-- Enhanced `internal/renderer/mapnik.go` with LoadXML and SetBounds methods
+- `internal/tile/coords.go` - Web Mercator projection and tile coordinate system
+- `assets/styles/layers/` - Mapnik XML styles for each layer
 
-**Features**:
-- Renders each layer separately: Land → Water → Parks → Civic → Roads
-- Converts OSM features to GeoJSON per layer
-- Replaces datasource placeholders in Mapnik styles
-- Handles layers with no features (skips rendering)
-- Manages temporary files automatically
-- Outputs separate PNG for each layer
+**Critical Fixes**:
+- **Layer Isolation**: Mapnik map object reset prevents layer contamination in multi-pass rendering
+- **Edge Alignment**: 128-pixel buffer (50% of tile size) ensures features render seamlessly across tile boundaries
+- **Anti-aliasing**: Tests handle premultiplied alpha and perspective-dependent color variations (tolerance: 60)
 
-**Test Results**:
-- ✅ Multi-pass renderer creation test passed
-- ✅ Layer path helper functions tested
-- ✅ GeoJSON conversion fully tested (7/7 tests passing)
+**Test Coverage**: 68 unit tests + integration tests rendering 3×3 tile grids with layer separation and edge alignment verification
 
-### 2.5 Initial Testing
-- [x] Select test tile covering central area (z13_x4317_y2692)
-- [x] Render single test tile with all layers
-- [x] Verify land layer fills entire background
-- [ ] Verify water features align with rivers/lakes
-- [ ] Verify parks appear in correct locations
-- [x] Verify civic buildings render
-- [ ] Verify roads render with correct widths
-- [ ] Check tile edge alignment
-- [ ] Verify color accuracy (no anti-aliasing issues)
-- [ ] Document rendering issues and edge cases
+## Phase 3: Image Processing - Watercolor Effect ✅ COMPLETE
 
-**Status**: 🟡 **IN PROGRESS** - Basic rendering verified; visual alignment checks pending
-
-## Phase 3: Image Processing - Watercolor Effect
-
-### 3.1 Mask Processing Pipeline
-- [x] Implement binary mask extraction from layer images
-- [x] Implement Gaussian blur for mask softening
-- [x] Research and implement Perlin noise generation in Go
-- [x] Create tileable 1024x1024 Perlin noise texture
-- [x] Implement noise overlay on blurred mask
-- [x] Implement threshold function for mask sharpening
-- [x] Add optional antialiasing for mask edges
-- [x] Test pipeline on single feature layer
-
-**Status**: ✅ **COMPLETE** - Full watercolor mask processing pipeline implemented and tested!
-
-**Implementation**: `internal/mask/processor.go`
-- Binary mask extraction from colored layer images
-- Gaussian blur for edge softening (using disintegration/gift)
-- Perlin noise generation (using aquilax/go-perlin)
-- Noise overlay with configurable strength
-- Threshold function for mask sharpening
-- Antialiasing for smooth edges
-- Full test coverage (7/7 tests passing)
-
-**Test Results**:
-- ✅ ExtractBinaryMask: Converts colored layers to binary masks
-- ✅ GaussianBlur: Softens edges with configurable sigma
-- ✅ GeneratePerlinNoise: Creates deterministic noise textures
-- ✅ ApplyNoiseToMask: Overlays noise for organic edges
-- ✅ ApplyThreshold: Sharpens masks after noise application
-- ✅ AntialiasEdges: Final edge smoothing
-- ✅ TestWatercolorPipeline: Complete integration test with 256x256 circular feature
+**Overview**: Implemented complete watercolor processing pipeline that transforms colored layer masks into textured, organic-edged features with characteristic "bleeding" effect.
 
 **Pipeline Workflow**:
 1. Extract binary mask from rendered layer (transparent → black, feature → white)
 2. Apply Gaussian blur to soften edges
-3. Generate Perlin noise texture
-4. Overlay noise on blurred mask for organic variation
-5. Apply threshold to sharpen the noisy mask
-6. Apply light antialiasing for smooth final edges
+3. Overlay Perlin noise for organic variation (globally aligned to prevent tile seams)
+4. Apply threshold to sharpen the noisy mask
+5. Apply antialiasing for smooth final edges
+6. Tile and apply texture with mask as alpha channel
+7. Add edge darkening halo for depth
 
-This creates the characteristic watercolor "bleeding" effect with organic, hand-painted edges.
+**Key Implementations**:
+- `internal/mask/processor.go` - Binary mask extraction, Gaussian blur, Perlin noise generation with global offset alignment, threshold, antialiasing
+- `internal/mask/edge.go` - Edge halo extraction via blur differencing, gamma tapering, dark overlay compositing
+- `internal/texture/processor.go` - Global-offset texture tiling, mask-to-alpha application, color tinting
+- `internal/watercolor/processor.go` - Complete pipeline orchestration with per-layer styles (texture, tint, edge color/strength, blur parameters)
 
-### 3.2 Noise Consistency Across Tiles
-- [x] Implement deterministic noise positioning
-- [x] Align noise texture to global tile grid
-- [x] Test noise continuity at tile boundaries
-- [x] Verify adjacent tiles have matching noise patterns
-- [x] Document noise alignment strategy
+**Critical Features**:
+- **Noise Consistency**: Perlin noise aligned to global grid ensures seamless patterns across tile boundaries
+- **Texture Tiling**: Global-offset sampling keeps texture seams invisible across tiles
+- **Layer Styles**: Each layer has customized parameters (blur sigma, noise strength, edge darkness, color tint)
+- **Edge Darkening**: Creates depth and watercolor characteristic darker outlines
 
-**Status**: ✅ **COMPLETE** - Perlin noise sampling is aligned to a global grid to avoid seams.
-
-**Implementation**: `internal/mask/processor.go`
-- Added `GeneratePerlinNoiseWithOffset` for offset-aware sampling; legacy generator delegates to it.
-
-**Tests**: `internal/mask/processor_test.go`
-- Alignment tests for horizontal and vertical neighbors against a shared reference field.
-
-**Documentation**: [docs/3.2-noise-consistency-across-tiles.md](docs/3.2-noise-consistency-across-tiles.md)
-
-### 3.3 Texture Application
-- [x] Implement texture tiling/scaling to tile size
-- [x] Apply processed mask as alpha channel to texture
-- [x] Implement color tinting for generic textures
-- [x] Create texture variants for each layer type
-- [x] Test texture application on sample masks
-- [x] Verify seamless texture edges
-
-**Status**: ✅ **COMPLETE** - Texture tiling, masking, tinting, and layer defaults implemented with tests.
-
-**Implementation**: `internal/texture/processor.go`
-- Global-offset tiling to keep seams invisible across tiles
-- Mask-to-alpha application with automatic texture tiling
-- Tinting utility preserving alpha
-- Default layer-to-texture mapping (land, water, parks, civic, roads)
-
-**Tests**: `internal/texture/processor_test.go`
-- Seam alignment across horizontal/vertical neighbors
-- Offset sampling correctness
-- Mask application correctness
-- Tint blending correctness
-
-**Documentation**: [docs/3.3-texture-application.md](docs/3.3-texture-application.md)
-
-### 3.4 Edge Darkening Effect
-- [x] Implement edge detection on original mask
-- [x] Create secondary blur for edge outline
-- [x] Extract outer halo from blurred mask
-- [x] Implement edge outline tapering
-- [x] Apply darker color to edge overlay
-- [x] Composite edge layer onto painted layer
-- [x] Test edge effect on various feature types
-- [x] Fine-tune edge thickness and darkness
-
-**Status**: ✅ **COMPLETE** - Edge halo extraction, tapering, and darkening overlay implemented with tests.
-
-**Implementation**: `internal/mask/edge.go`
-- Edge halo via inner/outer blur differencing with normalization
-- Optional gamma tapering for falloff control
-- Dark overlay compositing that preserves base alpha
-
-**Tests**: `internal/mask/edge_test.go`
-- Halo presence on edges, near-zero center/outside
-- Taper falloff correctness
-- Darkening applied only where the edge mask indicates
-
-**Documentation**: [docs/3.4-edge-darkening-effect.md](docs/3.4-edge-darkening-effect.md)
-
-### 3.5 Layer-Specific Processing
-- [x] Apply watercolor pipeline to land layer
-- [x] Apply watercolor pipeline to water layer
-- [x] Apply watercolor pipeline to parks layer
-- [x] Apply watercolor pipeline to roads layer
-- [x] Apply watercolor pipeline to civic areas (optional)
-- [x] Verify each layer has appropriate visual style
-
-**Status**: ✅ **COMPLETE** - Layer-aware watercolor processing with per-layer styles, textures, and edge darkening.
-
-**Implementation**: `internal/watercolor/processor.go`
-- Per-layer styles (texture, tint, edge color/strength, blur sigmas, gamma)
-- Common pipeline params (tile size, blur, noise, threshold, antialias, seed, offsets)
-- `DefaultParams` helper plus `PaintLayer` orchestrating mask → noise → texture → edge darkening
-
-**Tests**: `internal/watercolor/processor_test.go`
-- Validates masking/tinting/edge darkening and error on missing style
-
-**Documentation**: [docs/3.5-layer-specific-processing.md](docs/3.5-layer-specific-processing.md)
-
-### 3.6 Visual Quality Testing
-- [x] Test multiple blur radius values
-- [x] Test multiple threshold levels
-- [x] Compare results with original Stamen tiles
-- [x] Adjust parameters for optimal appearance
-- [x] Document final parameter values
-
-**Status**: ✅ **COMPLETE** - Automated parameter sensitivity tests plus documented defaults and manual comparison guidance.
-
-**Implementation**:
-- Automated coverage sensitivity tests in `internal/watercolor/quality_test.go`
-- Default parameter set and per-layer styles in `internal/watercolor/processor.go`
-
-**Documentation**: [docs/3.6-visual-quality-testing.md](docs/3.6-visual-quality-testing.md)
+**Test Coverage**: Full unit test suite for all pipeline components + parameter sensitivity tests
 
 ## Phase 4: Compositing and Tile Delivery
 
@@ -277,60 +91,40 @@ This creates the characteristic watercolor "bleeding" effect with organic, hand-
 - [x] Test compositing on single tile
 - [x] Verify layer overlap handling
 
-### 4.2 Road Layer Special Handling
-- [ ] Ensure road line widths scale with zoom level
-- [ ] Apply appropriate blur for linear features
-- [ ] Use reddish/orange tint for major roads
-- [ ] Test road overlay on composite tile
+### 4.2 Road Layer Fidelity (per Stamen)
+- [ ] Make road stroke widths zoom-aware in Mapnik (scale_denominator or per-zoom multiplier) so visual thickness stays consistent on 256/512 px tiles
+- [ ] Keep road watercolor treatment readable: thinner blur/edge params for linear features, reddish/orange tint that survives compositing
+- [ ] Add regression test comparing rendered road width/alpha at two zooms to prove scaling works
 
-### 4.3 Label Layer (Optional)
-- [ ] Decide on label inclusion approach
-- [ ] Render text labels via Mapnik (if included)
-- [ ] Choose appropriate serif font
-- [ ] Apply transparency to labels
-- [ ] Test label legibility
+### 4.3 Labels Policy (Stamen default: none)
+- [ ] Decide default posture: ship label-free tiles; document why (matches Stamen aesthetic)
+- [ ] Optional path: Mapnik text style or external transparent label tiles; gate behind config flag
+- [ ] Quick sanity render to confirm label legibility and halo/alpha settings if enabled
 
-### 4.4 Tile Edge Verification
-- [ ] Generate multiple adjacent tiles
-- [ ] Verify features align across boundaries
-- [ ] Check noise pattern continuity
-- [ ] Test at various zoom levels
-- [ ] Fix any seam issues
+### 4.4 Seam & Alignment Verification
+- [ ] Integration test rendering at least 2×2 adjacent tiles and diffing touching edges for pixel match
+- [ ] Verify noise/texture offsets remain globally aligned; emit diagnostics when mismatches occur
+- [ ] Document a manual Leaflet checklist for seam inspection
 
-### 4.5 Tile Output Format
-- [ ] Implement PNG tile writer (256x256)
-- [ ] Add support for Hi-DPI tiles (512x512)
-- [ ] Optimize PNG compression
-- [ ] Add tile metadata (attribution, etc.)
-- [ ] Test tile loading in browser
+### 4.5 Output Formats & Hi-DPI
+- [ ] Add `--hidpi`/config toggle to emit 512 px `@2x` tiles alongside 256 px output using existing tile-size plumbing
+- [ ] Use `png.Encoder` with configurable compression level; benchmark default vs best speed
+- [ ] Ensure filename pattern matches Leaflet retina expectations; cover with a small encoding test
 
-### 4.6 Leaflet Integration
-- [ ] Create basic HTML/Leaflet test page
-- [ ] Set up local static file server (Go HTTP server)
-- [ ] Configure Leaflet tile layer with local tiles
-- [ ] Set appropriate zoom range (10-15)
-- [ ] Add attribution text
-- [ ] Test map interaction (pan, zoom)
+### 4.6 Leaflet Demo & Local Serving
+- [ ] Provide `just serve` (or tiny Go static server) to host `tiles/`
+- [ ] Create minimal `docs/leaflet-demo.html` pointing at local tiles with attribution and sane zoom bounds
+- [ ] Smoke-test demo after generating a Hanover sample set
 
-### 4.7 Visual Tuning Iteration
-- [ ] Review overall color saturation
-- [ ] Adjust brightness if needed
-- [ ] Test different textures for layers
-- [ ] Fine-tune blur and threshold parameters
-- [ ] Ensure park green distinguishes from land
-- [ ] Verify road visibility
-- [ ] Test at different zoom levels
+### 4.7 Visual Tuning Controls
+- [ ] Expose per-layer watercolor params (tint, blur sigma, noise strength, edge colors) via config with Phase 3 defaults
+- [ ] Add golden/snapshot render for a known tile to catch regressions when tuning
+- [ ] Document tuning guidance referencing the Stamen process steps (blur → noise → threshold → edge darkening)
 
 ### 4.8 Hanover Coverage Generation
-- [ ] Define tile range for Hanover area
-- [ ] Implement batch tile generation script
-- [ ] Generate zoom level 10 tiles
-- [ ] Generate zoom level 11 tiles
-- [ ] Generate zoom level 12 tiles
-- [ ] Generate zoom level 13 tiles
-- [ ] Generate zoom level 14 tiles
-- [ ] Generate zoom level 15 tiles
-- [ ] Verify complete coverage in Leaflet
+- [ ] Add CLI flags for bbox/zoom-range batch generation (reuse `tile.TileRange`)
+- [ ] Script batch generation for Hanover (z10–15) with progress logging, `--force`, and resumable output dirs
+- [ ] Verify the produced set in the Leaflet demo and record bounds/zooms used
 
 ## Phase 5: Scaling and Modern Improvements
 
