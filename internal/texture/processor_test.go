@@ -10,11 +10,13 @@ import (
 
 func TestTextureNameForLayer(t *testing.T) {
 	expected := map[geojson.LayerType]string{
-		geojson.LayerLand:  "land.png",
-		geojson.LayerWater: "water.png",
-		geojson.LayerParks: "green.png",
-		geojson.LayerCivic: "lilac.png",
-		geojson.LayerRoads: "yellow.png",
+		geojson.LayerPaper:    "white.png",
+		geojson.LayerLand:     "land.png",
+		geojson.LayerWater:    "water.png",
+		geojson.LayerParks:    "green.png",
+		geojson.LayerCivic:    "lilac.png",
+		geojson.LayerRoads:    "white.png",
+		geojson.LayerHighways: "yellow.png",
 	}
 
 	for layer, want := range expected {

@@ -22,6 +22,10 @@ tiles/*.png
 tiles/**/*.png
 testdata/output/
 
+# Generated test artifacts (use repo-root testdata/*)
+internal/watercolor/testdata/output/
+internal/watercolor/testdata/golden/
+
 # Cache directories
 cache/
 .gocache/

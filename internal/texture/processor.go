@@ -10,11 +10,13 @@ import (
 
 // DefaultLayerTextures maps layer types to their default texture filenames.
 var DefaultLayerTextures = map[geojson.LayerType]string{
-	geojson.LayerLand:  "land.png",
-	geojson.LayerWater: "water.png",
-	geojson.LayerParks: "green.png",
-	geojson.LayerCivic: "lilac.png",
-	geojson.LayerRoads: "yellow.png",
+	geojson.LayerLand:     "land.png",
+	geojson.LayerWater:    "water.png",
+	geojson.LayerParks:    "green.png",
+	geojson.LayerCivic:    "lilac.png",
+	geojson.LayerRoads:    "white.png",
+	geojson.LayerHighways: "yellow.png",
+	geojson.LayerPaper:    "white.png",
 }
 
 // TextureNameForLayer returns the default texture filename for a layer.

@@ -163,3 +163,16 @@ generate-test-tile:
 # Run integration tests (requires Mapnik installed and Overpass reachable)
 test-integration:
     WATERCOLORMAP_INTEGRATION=1 go test ./... -v
+
+# Update golden stage images (synthetic, deterministic)
+update-goldens:
+    UPDATE_GOLDEN=1 go test ./... -run TestWatercolorStagesGolden
+
+# Update Hannover real-tile golden stage images (requires Mapnik + Overpass)
+update-goldens-hannover:
+    UPDATE_GOLDEN=1 WATERCOLORMAP_INTEGRATION=1 go test ./... -run TestWatercolorStagesGolden_HannoverRealTile
+
+# Update all stage goldens (synthetic + Hannover)
+update-goldens-all:
+    just update-goldens
+    just update-goldens-hannover

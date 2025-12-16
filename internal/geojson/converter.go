@@ -12,11 +12,13 @@ import (
 type LayerType string
 
 const (
-	LayerWater LayerType = "water"
-	LayerLand  LayerType = "land"
-	LayerParks LayerType = "parks"
-	LayerCivic LayerType = "civic"
-	LayerRoads LayerType = "roads"
+	LayerWater    LayerType = "water"
+	LayerLand     LayerType = "land"
+	LayerParks    LayerType = "parks"
+	LayerCivic    LayerType = "civic"
+	LayerRoads    LayerType = "roads"
+	LayerHighways LayerType = "highways"
+	LayerPaper    LayerType = "paper"
 )
 
 // ToGeoJSON converts a slice of features to GeoJSON FeatureCollection
@@ -86,6 +88,18 @@ func GetLayerFeatures(fc types.FeatureCollection, layer LayerType) []types.Featu
 		return combined
 	case LayerRoads:
 		return fc.Roads
+	case LayerHighways:
+		// Highways/major roads are derived from the generic roads feature set.
+		// We keep this as a view rather than adding a separate collection bucket.
+		out := make([]types.Feature, 0, len(fc.Roads))
+		for _, f := range fc.Roads {
+			hw, _ := f.Properties["highway"].(string)
+			switch hw {
+			case "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link":
+				out = append(out, f)
+			}
+		}
+		return out
 	case LayerLand:
 		return fc.Land
 	default:

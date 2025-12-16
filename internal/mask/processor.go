@@ -9,6 +9,99 @@ import (
 	"github.com/disintegration/gift"
 )
 
+// ExtractAlphaMask converts an image's alpha channel into a grayscale mask (0-255).
+// This preserves anti-aliased edges from the renderer and is suitable for alpha-only
+// mask composition.
+func ExtractAlphaMask(img image.Image) *image.Gray {
+	if img == nil {
+		return nil
+	}
+
+	bounds := img.Bounds()
+	out := image.NewGray(bounds)
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, a := img.At(x, y).RGBA()
+			// a is 0-65535; map to 0-255.
+			out.SetGray(x, y, color.Gray{Y: uint8(a >> 8)})
+		}
+	}
+
+	return out
+}
+
+// NewEmptyMask returns an all-zero grayscale mask of the given bounds.
+func NewEmptyMask(bounds image.Rectangle) *image.Gray {
+	return image.NewGray(bounds)
+}
+
+// MaxMask computes a pixel-wise max of two masks (union/or for alpha masks).
+// Masks must have identical bounds.
+func MaxMask(a, b *image.Gray) *image.Gray {
+	if a == nil || b == nil {
+		return nil
+	}
+	if a.Bounds() != b.Bounds() {
+		return nil
+	}
+
+	bounds := a.Bounds()
+	out := image.NewGray(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			av := a.GrayAt(x, y).Y
+			bv := b.GrayAt(x, y).Y
+			if bv > av {
+				av = bv
+			}
+			out.SetGray(x, y, color.Gray{Y: av})
+		}
+	}
+	return out
+}
+
+// MinMask computes a pixel-wise min of two masks (intersection/and for alpha masks).
+// Masks must have identical bounds.
+func MinMask(a, b *image.Gray) *image.Gray {
+	if a == nil || b == nil {
+		return nil
+	}
+	if a.Bounds() != b.Bounds() {
+		return nil
+	}
+
+	bounds := a.Bounds()
+	out := image.NewGray(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			av := a.GrayAt(x, y).Y
+			bv := b.GrayAt(x, y).Y
+			if bv < av {
+				av = bv
+			}
+			out.SetGray(x, y, color.Gray{Y: av})
+		}
+	}
+	return out
+}
+
+// InvertMask inverts a grayscale mask (Y -> 255-Y).
+func InvertMask(m *image.Gray) *image.Gray {
+	if m == nil {
+		return nil
+	}
+	bounds := m.Bounds()
+	out := image.NewGray(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			v := m.GrayAt(x, y).Y
+			out.SetGray(x, y, color.Gray{Y: 255 - v})
+		}
+	}
+	return out
+}
+
 // ExtractBinaryMask converts a colored layer image into a binary mask.
 // Pixels with any non-transparent color become white (255), transparent pixels become black (0).
 func ExtractBinaryMask(img image.Image) *image.Gray {

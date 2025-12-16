@@ -16,6 +16,7 @@ func TestLoadPNGTextures(t *testing.T) {
 		"green.png",
 		"gray.png",
 		"lilac.png",
+		"white.png",
 		"yellow.png",
 	}
 

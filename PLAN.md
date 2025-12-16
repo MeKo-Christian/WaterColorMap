@@ -54,32 +54,88 @@ This document outlines the complete implementation plan for creating Stamen Wate
 
 **Test Coverage**: 68 unit tests + integration tests rendering 3×3 tile grids with layer separation and edge alignment verification
 
-## Phase 3: Image Processing - Watercolor Effect ✅ COMPLETE
+## Phase 3: Image Processing - Watercolor Effect (Stamen-Aligned Revision) 🟨 IN PROGRESS
 
-**Overview**: Implemented complete watercolor processing pipeline that transforms colored layer masks into textured, organic-edged features with characteristic "bleeding" effect.
+**Why this revision**: The current Phase 3 implementation largely processes each layer independently using its own alpha mask. The Stamen process relies on **cross-layer mask construction** (e.g., land is derived by inverting a combined “non-land” mask), and reuses progressively blurred masks for additional effects.
 
-**Pipeline Workflow**:
-1. Extract binary mask from rendered layer (transparent → black, feature → white)
-2. Apply Gaussian blur to soften edges
-3. Overlay Perlin noise for organic variation (globally aligned to prevent tile seams)
-4. Apply threshold to sharpen the noisy mask
-5. Apply antialiasing for smooth final edges
-6. Tile and apply texture with mask as alpha channel
-7. Add edge darkening halo for depth
+### 3.0 Current State (v1)
 
-**Key Implementations**:
-- `internal/mask/processor.go` - Binary mask extraction, Gaussian blur, Perlin noise generation with global offset alignment, threshold, antialiasing
-- `internal/mask/edge.go` - Edge halo extraction via blur differencing, gamma tapering, dark overlay compositing
-- `internal/texture/processor.go` - Global-offset texture tiling, mask-to-alpha application, color tinting
-- `internal/watercolor/processor.go` - Complete pipeline orchestration with per-layer styles (texture, tint, edge color/strength, blur parameters)
+**What exists today** (works, but simplified):
+- Per-layer mask pipeline: blur → noise → threshold → antialias
+- Texture tiling/tinting using the mask as alpha
+- Edge darkening halo (mask blur differencing)
 
-**Critical Features**:
-- **Noise Consistency**: Perlin noise aligned to global grid ensures seamless patterns across tile boundaries
-- **Texture Tiling**: Global-offset sampling keeps texture seams invisible across tiles
-- **Layer Styles**: Each layer has customized parameters (blur sigma, noise strength, edge darkness, color tint)
-- **Edge Darkening**: Creates depth and watercolor characteristic darker outlines
+**Where**:
+- `internal/mask/processor.go`
+- `internal/mask/edge.go`
+- `internal/texture/processor.go`
+- `internal/watercolor/processor.go`
 
-**Test Coverage**: Full unit test suite for all pipeline components + parameter sensitivity tests
+**Main gap vs Stamen**:
+- No explicit “water + roads” (sea + roads) union mask used as the foundation.
+- No explicit **inversion step** to derive the land mask from that union.
+- No explicit reuse of “even-more-blurred” masks as multiplicative/overlay shading layers per feature category.
+
+### 3.1 Revised Core Mask Logic (alpha-only)
+
+We treat all masks as **single-channel alpha masks** (grayscale 0–255), derived only from the rendered layer PNG alpha.
+
+**Base masks** (from rendered layers):
+- `waterMask` := alpha(layer=water)
+- `roadsMask` := alpha(layer=roads)
+
+**Combined non-land mask** (union):
+- `nonLandMask` := max(waterMask, roadsMask)
+	- (Optional later: include other “non-land” contributors if we decide they must punch holes, but start with water+roads as requested.)
+
+**Fuzzy boundary mask** (Stamen step):
+1. `blur1` := GaussianBlur(nonLandMask)
+2. `noisy` := blur1 + PerlinNoise (applied to the same channel)
+3. `hard` := Threshold(noisy) → hard black/white (transparent/opaque)
+4. `aa` := Antialias(hard)
+
+**Invert for land**:
+- `landMask` := invert(aa)
+	- This produces a land mask where “everything not water/roads” becomes the textured land region.
+
+**Antialiasing strategy** (pick simplest first):
+- Option A (simple): small blur kernel (`sigma ~ 0.3–0.8`) after threshold
+- Option B (higher quality): supersample at 2× and downsample (only if needed)
+
+### 3.2 Using the Mask for Texture + Shading
+
+**Land texture application**:
+1. Tile/tint the land texture (globally aligned)
+2. Apply `landMask` as alpha
+
+**Land darkening / pigment accumulation** (reuse the same foundation mask):
+1. `landShadeMask` := GaussianBlur(landMask, larger sigma)
+2. Use `landShadeMask` as a black/transparent overlay and multiply/overlay it onto the painted land.
+
+This matches the “keep blurring and reuse as a darkening overlay” idea: it’s derived from the same mask field and stays consistent across tiles.
+
+### 3.3 Apply Similar Logic to Other Layers
+
+For other layers (parks/civic/water/roads), we keep the same *mask building blocks* but ensure **correct masking relationships** before painting:
+
+- `parksMask` := alpha(parks) AND landMask
+- `civicMask` := alpha(civic) AND landMask
+- `waterMask` := alpha(water)
+- `roadsMask` := alpha(roads)
+
+Then each layer gets:
+1. blur → noise → threshold → antialias (applied to that layer’s mask)
+2. texture application using the final mask as alpha
+3. optional further-blur reuse as darkening overlay (layer-specific)
+
+### 3.4 Work Items (to complete Phase 3 revision)
+
+- [ ] Add explicit mask composition ops (alpha extraction, union/max, intersect/min, invert) and unit tests.
+- [ ] Add a new “cross-layer mask construction” step before painting any layer.
+- [ ] Update the land pipeline to use `landMask := invert(process(nonLandMask))` instead of “land’s own alpha”.
+- [ ] Update parks/civic to be constrained to land (AND landMask).
+- [ ] Add a test that verifies land is fully excluded where water/roads are present.
+- [ ] Re-tune blur/noise/threshold parameters after behavior changes.
 
 ## Phase 4: Compositing and Tile Delivery
 
@@ -92,9 +148,9 @@ This document outlines the complete implementation plan for creating Stamen Wate
 - [x] Verify layer overlap handling
 
 ### 4.2 Road Layer Fidelity (per Stamen)
-- [ ] Make road stroke widths zoom-aware in Mapnik (scale_denominator or per-zoom multiplier) so visual thickness stays consistent on 256/512 px tiles
-- [ ] Keep road watercolor treatment readable: thinner blur/edge params for linear features, reddish/orange tint that survives compositing
-- [ ] Add regression test comparing rendered road width/alpha at two zooms to prove scaling works
+- [x] Make road stroke widths zoom-aware in Mapnik (scale_denominator or per-zoom multiplier) so visual thickness stays consistent on 256/512 px tiles
+- [x] Keep road watercolor treatment readable: thinner blur/edge params for linear features, reddish/orange tint that survives compositing
+- [x] Add regression test comparing rendered road width/alpha at two zooms to prove scaling works
 
 ### 4.3 Labels Policy (Stamen default: none)
 - [ ] Decide default posture: ship label-free tiles; document why (matches Stamen aesthetic)

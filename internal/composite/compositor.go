@@ -16,6 +16,53 @@ var DefaultOrder = []geojson.LayerType{
 	geojson.LayerParks,
 	geojson.LayerCivic,
 	geojson.LayerRoads,
+	geojson.LayerHighways,
+}
+
+// CompositeLayersOverBase stacks watercolor-painted layers into a single tile over a pre-filled base.
+// This is used to model "paper" showing through cutouts (e.g., roads as transparent holes).
+func CompositeLayersOverBase(
+	base image.Image,
+	layers map[geojson.LayerType]image.Image,
+	order []geojson.LayerType,
+	tileSize int,
+) (*image.NRGBA, error) {
+	if tileSize <= 0 {
+		return nil, fmt.Errorf("tile size must be positive")
+	}
+
+	if order == nil {
+		order = DefaultOrder
+	}
+
+	expectedBounds := image.Rect(0, 0, tileSize, tileSize)
+	dst := image.NewNRGBA(expectedBounds)
+
+	if base != nil {
+		if base.Bounds() != expectedBounds {
+			return nil, fmt.Errorf("base bounds %v do not match expected %v", base.Bounds(), expectedBounds)
+		}
+		for y := expectedBounds.Min.Y; y < expectedBounds.Max.Y; y++ {
+			for x := expectedBounds.Min.X; x < expectedBounds.Max.X; x++ {
+				dst.Set(x, y, base.At(x, y))
+			}
+		}
+	}
+
+	for _, layer := range order {
+		img := layers[layer]
+		if img == nil {
+			continue
+		}
+
+		if img.Bounds() != expectedBounds {
+			return nil, fmt.Errorf("layer %s bounds %v do not match expected %v", layer, img.Bounds(), expectedBounds)
+		}
+
+		alphaOver(dst, img)
+	}
+
+	return dst, nil
 }
 
 // CompositeLayers stacks watercolor-painted layers into a single tile using alpha blending.

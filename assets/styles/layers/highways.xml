@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Map background-color="#00000000" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
+
+  <!-- Highways Layer Style -->
+  <!-- Renders MAJOR roads in pure yellow (#FFFF00) for mask extraction -->
+
+  <Style name="highways">
+    <!-- Low zoom (z10-11) -->
+    <Rule>
+      <Filter>[highway] = 'motorway' or [highway] = 'motorway_link' or [highway] = 'trunk' or [highway] = 'trunk_link'</Filter>
+      <MaxScaleDenominator>1000000</MaxScaleDenominator>
+      <MinScaleDenominator>150000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
+      <MaxScaleDenominator>1000000</MaxScaleDenominator>
+      <MinScaleDenominator>150000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
+      <MaxScaleDenominator>1000000</MaxScaleDenominator>
+      <MinScaleDenominator>150000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+
+    <!-- Mid zoom (z12-13) -->
+    <Rule>
+      <Filter>[highway] = 'motorway' or [highway] = 'motorway_link' or [highway] = 'trunk' or [highway] = 'trunk_link'</Filter>
+      <MaxScaleDenominator>150000</MaxScaleDenominator>
+      <MinScaleDenominator>50000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
+      <MaxScaleDenominator>150000</MaxScaleDenominator>
+      <MinScaleDenominator>50000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
+      <MaxScaleDenominator>150000</MaxScaleDenominator>
+      <MinScaleDenominator>50000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+
+    <!-- High zoom (z14+) -->
+    <Rule>
+      <Filter>[highway] = 'motorway' or [highway] = 'motorway_link' or [highway] = 'trunk' or [highway] = 'trunk_link'</Filter>
+      <MaxScaleDenominator>50000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
+      <MaxScaleDenominator>50000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
+      <MaxScaleDenominator>50000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFF00" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+  </Style>
+
+  <!-- Data Layer -->
+  <Layer name="highways" srs="+proj=longlat +datum=WGS84 +no_defs">
+    <StyleName>highways</StyleName>
+    <Datasource>
+      <Parameter name="type">ogr</Parameter>
+      <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>
+      <Parameter name="layer">LAYER_PLACEHOLDER</Parameter>
+    </Datasource>
+  </Layer>
+
+</Map>

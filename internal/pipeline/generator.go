@@ -8,14 +8,16 @@ import (
 	"os"
 	"path/filepath"
 
+	"log/slog"
+
 	"github.com/MeKo-Tech/watercolormap/internal/composite"
 	"github.com/MeKo-Tech/watercolormap/internal/geojson"
+	"github.com/MeKo-Tech/watercolormap/internal/mask"
 	"github.com/MeKo-Tech/watercolormap/internal/renderer"
 	"github.com/MeKo-Tech/watercolormap/internal/texture"
 	"github.com/MeKo-Tech/watercolormap/internal/tile"
 	"github.com/MeKo-Tech/watercolormap/internal/types"
 	"github.com/MeKo-Tech/watercolormap/internal/watercolor"
-	"log/slog"
 )
 
 // DataSource fetches OSM features for a tile coordinate.
@@ -112,6 +114,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	params.OffsetY = int(coords.Y) * g.tileSize
 
 	painted := make(map[geojson.LayerType]image.Image)
+	raw := make(map[geojson.LayerType]image.Image)
 
 	for layer, res := range renderResult.Layers {
 		if res == nil || res.OutputPath == "" {
@@ -128,15 +131,103 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 			return "", "", fmt.Errorf("failed to read layer %s: %w", layer, err)
 		}
 
-		paintedLayer, err := watercolor.PaintLayer(img, layer, params)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to paint layer %s: %w", layer, err)
-		}
-
-		painted[layer] = paintedLayer
+		raw[layer] = img
 	}
 
-	composited, err := composite.CompositeLayers(painted, nil, g.tileSize)
+	// --- Phase 3 (revised): cross-layer mask construction ---
+	// water = sea (same in our data)
+	waterImg := raw[geojson.LayerWater]
+	roadsImg := raw[geojson.LayerRoads]
+	highwaysImg := raw[geojson.LayerHighways]
+
+	baseBounds := image.Rect(0, 0, g.tileSize, g.tileSize)
+	waterMask := mask.NewEmptyMask(baseBounds)
+	roadsMask := mask.NewEmptyMask(baseBounds)
+	if waterImg != nil {
+		waterMask = mask.ExtractAlphaMask(waterImg)
+	}
+	if roadsImg != nil {
+		roadsMask = mask.ExtractAlphaMask(roadsImg)
+	}
+
+	nonLandBase := mask.MaxMask(waterMask, roadsMask)
+
+	// Paint water from its own alpha mask (not the combined non-land mask).
+	if waterImg != nil {
+		waterPainted, err := watercolor.PaintLayer(waterImg, geojson.LayerWater, params)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to paint water: %w", err)
+		}
+		painted[geojson.LayerWater] = waterPainted
+	}
+
+	// Build nonLand mask using the standard mask pipeline (blur/noise/threshold/AA), then invert for land.
+	// We reuse the same parameters as other layers (but operate on the combined mask).
+	finalNonLandMask, err := func() (*image.Gray, error) {
+		blurred := mask.GaussianBlur(nonLandBase, params.BlurSigma)
+		noise := mask.GeneratePerlinNoiseWithOffset(params.TileSize, params.TileSize, params.NoiseScale, params.Seed, params.OffsetX, params.OffsetY)
+		noisy := blurred
+		if params.NoiseStrength != 0 {
+			noisy = mask.ApplyNoiseToMask(blurred, noise, params.NoiseStrength)
+		}
+		thresholded := mask.ApplyThreshold(noisy, params.Threshold)
+		finalMask := thresholded
+		if params.AntialiasSigma > 0 {
+			finalMask = mask.AntialiasEdges(thresholded, params.AntialiasSigma)
+		}
+		return finalMask, nil
+	}()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to process non-land mask: %w", err)
+	}
+	landMask := mask.InvertMask(finalNonLandMask)
+
+	// Paint land directly from derived land mask.
+	paintedLand, err := watercolor.PaintLayerFromFinalMask(landMask, geojson.LayerLand, params)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to paint land from derived mask: %w", err)
+	}
+	painted[geojson.LayerLand] = paintedLand
+
+	// Paint roads from their own alpha mask.
+	// NOTE: We intentionally do NOT paint the roads layer. Roads are treated as cutouts
+	// in the derived land mask so the paper base shows through as white roads.
+
+	// Paint highways/major roads on top.
+	if highwaysImg != nil {
+		highwaysPainted, err := watercolor.PaintLayer(highwaysImg, geojson.LayerHighways, params)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to paint highways: %w", err)
+		}
+		painted[geojson.LayerHighways] = highwaysPainted
+	}
+
+	// Constrain parks/civic to land, then paint.
+	if parksImg := raw[geojson.LayerParks]; parksImg != nil {
+		parksMask := mask.MinMask(mask.ExtractAlphaMask(parksImg), landMask)
+		parksPainted, err := watercolor.PaintLayerFromMask(parksMask, geojson.LayerParks, params)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to paint parks constrained to land: %w", err)
+		}
+		painted[geojson.LayerParks] = parksPainted
+	}
+	if civicImg := raw[geojson.LayerCivic]; civicImg != nil {
+		civicMask := mask.MinMask(mask.ExtractAlphaMask(civicImg), landMask)
+		civicPainted, err := watercolor.PaintLayerFromMask(civicMask, geojson.LayerCivic, params)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to paint civic constrained to land: %w", err)
+		}
+		painted[geojson.LayerCivic] = civicPainted
+	}
+
+	// Paper base: fill the entire tile with a white texture so road cutouts show through.
+	base := texture.TileTexture(g.textures[geojson.LayerPaper], g.tileSize, params.OffsetX, params.OffsetY)
+	composited, err := composite.CompositeLayersOverBase(
+		base,
+		painted,
+		[]geojson.LayerType{geojson.LayerWater, geojson.LayerLand, geojson.LayerParks, geojson.LayerCivic, geojson.LayerHighways},
+		g.tileSize,
+	)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to composite layers: %w", err)
 	}
