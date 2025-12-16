@@ -14,20 +14,12 @@ permissions:
 jobs:
   test-unit:
     uses: ./.github/workflows/test-unit.yaml
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test-format:
     uses: ./.github/workflows/test-format.yaml
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test-lint:
     uses: ./.github/workflows/test-lint.yaml
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test-can-build:
     uses: ./.github/workflows/test-can-build.yaml
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

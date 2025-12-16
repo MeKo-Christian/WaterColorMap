@@ -2,16 +2,9 @@ name: test-format
 
 on:
   workflow_call:
-    secrets:
-      GITHUB_TOKEN:
-        required: false
-        description: GitHub Token with repo:read access
 
 permissions:
   contents: read
-
-env:
-  PAT: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
   test-format:

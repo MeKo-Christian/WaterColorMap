@@ -125,7 +125,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	mux.Handle("/demo/", http.StripPrefix("/demo/", fs))
 
 	// Tiles (with optional on-demand generation)
-	mux.Handle("/tiles/", od.Handler())
+	mux.Handle("/tiles/", withCORS(od.Handler()))
 
 	logger.Info("demo server listening",
 		"addr", addr,
@@ -137,4 +137,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	return srv.ListenAndServe()
+}
+
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

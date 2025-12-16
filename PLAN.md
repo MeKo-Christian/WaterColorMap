@@ -267,6 +267,7 @@ Then each layer gets:
 - [ ] Set up initial hosting solution
 
 ### 5.6 On-the-Fly Rendering Service
+
 - [ ] Design Go tile server architecture
 - [ ] Implement tile caching strategy
 - [ ] Add cache hit/miss handling
@@ -275,6 +276,7 @@ Then each layer gets:
 - [ ] Optimize for cache performance
 
 ### 5.6a Browser Playground (WebAssembly On-Demand)
+
 - [ ] Compile tile generator to WebAssembly (Go → WASM) using TinyGo or standard Go WASM toolchain
 - [ ] Create a minimal browser UI with Leaflet + IndexedDB/localStorage for client-side tile caching
 - [ ] Implement on-demand tile generation in the browser (fetch OSM data → render → cache → display)
