@@ -8,11 +8,15 @@ import (
 
 // GenerateTileRequest represents a tile generation request from JS
 type GenerateTileRequest struct {
-	Zoom   int  `json:"zoom"`
-	X      int  `json:"x"`
-	Y      int  `json:"y"`
-	HiDPI  bool `json:"hidpi"`
-	Base64 bool `json:"base64"`
+	Zoom  int  `json:"zoom"`
+	X     int  `json:"x"`
+	Y     int  `json:"y"`
+	HiDPI bool `json:"hidpi"`
+}
+
+type GenerateTileResponse struct {
+	Key      string `json:"key"`
+	Filename string `json:"filename"`
 }
 
 // generateTile is called from JavaScript to generate a tile
@@ -28,16 +32,17 @@ func generateTile(this js.Value, args []js.Value) interface{} {
 		return map[string]string{"error": fmt.Sprintf("failed to parse request: %v", err)}
 	}
 
-	// In WASM environment, we cannot use Mapnik (native C++ library)
-	// Instead, we provide a bridge to call a backend server or use simplified rendering
-	tileKey := fmt.Sprintf("z%d_x%d_y%d", req.Zoom, req.X, req.Y)
+	// We cannot render Mapnik in WASM, but we *can* provide a canonical filename builder
+	// so the browser code can reliably hit a backend `watercolormap serve` instance.
+	suffix := ""
 	if req.HiDPI {
-		tileKey += "@2x"
+		suffix = "@2x"
 	}
 
-	return map[string]string{
-		"info": fmt.Sprintf("tile request: %s (use server backend)", tileKey),
-		"note": "WASM in-browser rendering not available. Connect to a watercolormap serve instance.",
+	key := fmt.Sprintf("z%d_x%d_y%d%s", req.Zoom, req.X, req.Y, suffix)
+	return GenerateTileResponse{
+		Key:      key,
+		Filename: key + ".png",
 	}
 }
 

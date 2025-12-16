@@ -69,9 +69,16 @@ class WaterColorMapPlayground {
     this.cache = new TileCache();
     this.map = null;
     this.tileLayer = null;
-    this.generatingTiles = new Set();
     this.statusEl = document.getElementById('status');
+    this.backendBaseUrl = this.getInitialBackendBaseUrl();
     this.init();
+  }
+
+  getInitialBackendBaseUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get('backend');
+    // Default to localhost for local development.
+    return (fromQuery || 'http://127.0.0.1:8080').replace(/\/$/, '');
   }
 
   async init() {
@@ -84,26 +91,117 @@ class WaterColorMapPlayground {
       maxZoom: 16,
     });
 
-    // Custom tile layer that uses WASM generation and caching
-    this.tileLayer = L.tileLayer('', {
-      attribution: '© OpenStreetMap | WaterColorMap WASM Playground',
-      detectRetina: true,
-      maxZoom: 16,
-    });
-
-    this.tileLayer.getTileUrl = ({ x, y, z }) => {
-      const dpr = window.devicePixelRatio || 1;
-      const suffix = dpr >= 2 ? '@2x' : '';
-      const url = `data:${z}/${x}/${y}${suffix}`;
-      this.loadTileAsync(z, x, y, dpr >= 2);
-      return url;
-    };
+    this.tileLayer = this.createGridLayer();
 
     this.tileLayer.addTo(this.map);
 
     // Add controls
     this.setupControls();
-    this.updateStatus('Ready (WASM mode)');
+    this.updateStatus(`Ready. Backend: ${this.backendBaseUrl}`);
+  }
+
+  createGridLayer() {
+    const self = this;
+    return L.GridLayer.extend({
+      createTile(coords, done) {
+        const img = document.createElement('img');
+        img.alt = '';
+        img.setAttribute('role', 'presentation');
+
+        const dpr = window.devicePixelRatio || 1;
+        const is2x = dpr >= 2;
+        const z = coords.z;
+        const x = coords.x;
+        const y = coords.y;
+
+        self.loadTileToImg({ z, x, y, is2x, img })
+          .then(() => done(null, img))
+          .catch((err) => {
+            console.warn('tile load failed', err);
+            done(err, img);
+          });
+
+        return img;
+      },
+    })({
+      attribution: '© OpenStreetMap contributors | WaterColorMap Playground',
+      tileSize: 256,
+      maxZoom: 16,
+      minZoom: 10,
+      updateWhenIdle: true,
+      updateWhenZooming: false,
+      keepBuffer: 2,
+    });
+  }
+
+  makeTileUrl(z, x, y, is2x) {
+    const suffix = is2x ? '@2x' : '';
+
+    // If WASM is available, let it compute the canonical filename.
+    if (typeof watercolorGenerateTile === 'function') {
+      try {
+        const req = { zoom: z, x, y, hidpi: is2x };
+        const res = watercolorGenerateTile(JSON.stringify(req));
+        if (res && res.filename) {
+          return `${this.backendBaseUrl}/tiles/${res.filename}`;
+        }
+      } catch (e) {
+        // fall through
+      }
+    }
+
+    // Fallback (no WASM): match the server's flat filename scheme.
+    return `${this.backendBaseUrl}/tiles/z${z}_x${x}_y${y}${suffix}.png`;
+  }
+
+  async loadTileToImg({ z, x, y, is2x, img }) {
+    // Cache-first
+    const cached = await this.cache.get(z, x, y, is2x);
+    if (cached) {
+      const objectUrl = URL.createObjectURL(cached);
+      img.onload = () => URL.revokeObjectURL(objectUrl);
+      img.onerror = () => URL.revokeObjectURL(objectUrl);
+      img.src = objectUrl;
+      return;
+    }
+
+    // Fetch from backend
+    const url = this.makeTileUrl(z, x, y, is2x);
+    this.updateStatus(`Fetching z${z} ${x}/${y}...`);
+
+    let resp;
+    try {
+      resp = await fetch(url, { mode: 'cors' });
+    } catch (err) {
+      img.src = this.makePlaceholderDataUrl('Backend unreachable');
+      this.updateStatus(`Backend unreachable: ${this.backendBaseUrl}`);
+      return;
+    }
+
+    if (!resp.ok) {
+      img.src = this.makePlaceholderDataUrl(`HTTP ${resp.status}`);
+      this.updateStatus(`Tile fetch failed: HTTP ${resp.status}`);
+      return;
+    }
+
+    const blob = await resp.blob();
+    await this.cache.set(z, x, y, blob, is2x);
+
+    const objectUrl = URL.createObjectURL(blob);
+    img.onload = () => URL.revokeObjectURL(objectUrl);
+    img.onerror = () => URL.revokeObjectURL(objectUrl);
+    img.src = objectUrl;
+  }
+
+  makePlaceholderDataUrl(message) {
+    const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
+  <rect width="100%" height="100%" fill="#f5f5f5"/>
+  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#777">${String(
+    message,
+  ).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>
+</svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }
 
   setupControls() {
@@ -111,7 +209,7 @@ class WaterColorMapPlayground {
     controlDiv.innerHTML = `
       <div>
         <button id="clearCache" class="btn">Clear Cache</button>
-        <button id="toggleMode" class="btn">Server Mode</button>
+        <button id="toggleMode" class="btn">Backend URL</button>
       </div>
       <div style="margin-top: 10px; font-size: 12px;">
         <span id="cacheStatus">Cache: -</span><br>
@@ -126,57 +224,15 @@ class WaterColorMapPlayground {
     });
 
     document.getElementById('toggleMode').addEventListener('click', () => {
-      alert('Server mode: Point the tile layer at a running watercolormap serve instance');
+      const next = prompt(
+        'Backend base URL (example: http://127.0.0.1:8080).\n\nYou can also set ?backend=... in the URL.',
+        this.backendBaseUrl,
+      );
+      if (!next) return;
+      this.backendBaseUrl = next.replace(/\/$/, '');
+      this.updateStatus(`Backend set: ${this.backendBaseUrl}`);
+      this.map._repaint();
     });
-  }
-
-  async loadTileAsync(z, x, y, is2x) {
-    const key = `${z}/${x}/${y}`;
-    if (this.generatingTiles.has(key)) return;
-
-    // Check cache first
-    const cached = await this.cache.get(z, x, y, is2x);
-    if (cached) {
-      this.displayCachedTile(z, x, y, cached, is2x);
-      return;
-    }
-
-    this.generatingTiles.add(key);
-    this.updateStatus(`Generating ${key}...`);
-
-    try {
-      const req = {
-        zoom: z,
-        x: y,
-        y: y,
-        hidpi: is2x,
-        base64: true,
-      };
-
-      // Call WASM function (if available)
-      if (typeof watercolorGenerateTile !== 'undefined') {
-        const result = watercolorGenerateTile(JSON.stringify(req));
-        if (result.error) {
-          console.error(`Tile error: ${result.error}`);
-          this.updateStatus(`Error: ${result.error}`);
-          return;
-        }
-        this.updateStatus(result.info || `Generated ${key}`);
-      } else {
-        this.updateStatus('WASM module not loaded');
-      }
-    } catch (err) {
-      console.error(`Failed to generate tile ${key}:`, err);
-      this.updateStatus(`Error: ${err.message}`);
-    } finally {
-      this.generatingTiles.delete(key);
-    }
-  }
-
-  displayCachedTile(z, x, y, blob, is2x) {
-    const url = URL.createObjectURL(blob);
-    const key = `z${z}_x${x}_y${y}${is2x ? '@2x' : ''}`;
-    console.log(`Displaying cached tile: ${key}`);
   }
 
   updateStatus(msg) {
@@ -189,8 +245,5 @@ class WaterColorMapPlayground {
 
 // Initialize on page load
 window.addEventListener('load', () => {
-  if (typeof watercolorInit !== 'undefined') {
-    watercolorInit();
-  }
   window.playground = new WaterColorMapPlayground();
 });

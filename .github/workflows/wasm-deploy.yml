@@ -39,26 +39,8 @@ jobs:
           GOOS=js GOARCH=wasm go build -o docs/wasm-playground/wasm.wasm ./cmd/wasm
           bash scripts/copy-wasm-exec.sh
 
-      - name: Create loader script
-        run: |
-          cat > docs/wasm-playground/wasm.wasm.js << 'EOF'
-          // WASM loader - dynamically load and initialize the module
-          (async () => {
-            try {
-              const wasmModule = await WebAssembly.instantiateStreaming(
-                fetch('wasm.wasm'),
-                { env: { log: console.log } }
-              );
-              console.log('WASM module loaded successfully');
-            } catch (err) {
-              console.error('Failed to load WASM module:', err);
-              document.getElementById('status').textContent = 'Error: WASM module failed to load';
-            }
-          })();
-          EOF
-
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-pages-artifact@v3
         with:
           path: 'docs/wasm-playground'
 
