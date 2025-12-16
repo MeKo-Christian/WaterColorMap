@@ -28,13 +28,13 @@ type DataSource interface {
 // Generator wires datasource, rendering, watercolor, and compositing into a single step.
 type Generator struct {
 	ds         DataSource
+	textures   map[geojson.LayerType]image.Image
+	logger     *slog.Logger
 	stylesDir  string
 	outputDir  string
-	textures   map[geojson.LayerType]image.Image
 	tileSize   int
 	seed       int64
 	keepLayers bool
-	logger     *slog.Logger
 }
 
 // NewGenerator loads textures and prepares a generator.
@@ -190,8 +190,16 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	painted[geojson.LayerLand] = paintedLand
 
 	// Paint roads from their own alpha mask.
-	// NOTE: We intentionally do NOT paint the roads layer. Roads are treated as cutouts
-	// in the derived land mask so the paper base shows through as white roads.
+	// NOTE: Roads are also part of the derived non-land union mask, so they carve holes
+	// into land. Painting roads fills those holes with the intended style (instead of
+	// leaving paper showing through).
+	if roadsImg != nil {
+		roadsPainted, err := watercolor.PaintLayer(roadsImg, geojson.LayerRoads, params)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to paint roads: %w", err)
+		}
+		painted[geojson.LayerRoads] = roadsPainted
+	}
 
 	// Paint highways/major roads on top.
 	if highwaysImg != nil {
@@ -225,7 +233,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	composited, err := composite.CompositeLayersOverBase(
 		base,
 		painted,
-		[]geojson.LayerType{geojson.LayerWater, geojson.LayerLand, geojson.LayerParks, geojson.LayerCivic, geojson.LayerHighways},
+		[]geojson.LayerType{geojson.LayerWater, geojson.LayerLand, geojson.LayerParks, geojson.LayerCivic, geojson.LayerRoads, geojson.LayerHighways},
 		g.tileSize,
 	)
 	if err != nil {

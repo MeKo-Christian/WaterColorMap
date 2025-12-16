@@ -74,7 +74,7 @@ func TestPaintLayerAppliesMaskTintAndEdge(t *testing.T) {
 		B: uint8(0.6*float64(baseColor.B) + 0.4*float64(style.Tint.B)),
 		A: 255,
 	}
-	if !(center.R <= expectedTint.R && center.G <= expectedTint.G && center.B <= expectedTint.B) || center.A != 255 {
+	if (center.R > expectedTint.R || center.G > expectedTint.G || center.B > expectedTint.B) || center.A != 255 {
 		t.Fatalf("unexpected center color %+v, expected tinted (<= %+v) with alpha 255", center, expectedTint)
 	}
 
@@ -88,7 +88,7 @@ func TestPaintLayerAppliesMaskTintAndEdge(t *testing.T) {
 			}
 		}
 	}
-	if !(darkest.R < center.R || darkest.G < center.G || darkest.B < center.B) {
+	if darkest.R >= center.R && darkest.G >= center.G && darkest.B >= center.B {
 		t.Fatalf("expected some pixels to be darkened relative to center; center=%+v darkest=%+v", center, darkest)
 	}
 }

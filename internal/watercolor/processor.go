@@ -13,33 +13,33 @@ import (
 
 // LayerStyle defines per-layer watercolor styling parameters.
 type LayerStyle struct {
-	Layer             geojson.LayerType
 	Texture           image.Image
-	Tint              color.NRGBA
-	TintStrength      float64
-	MaskBlurSigma     float32 // optional override for mask blur (0 uses Params.BlurSigma)
-	MaskNoiseStrength float64 // optional override for noise strength (<=0 uses Params.NoiseStrength)
-	ShadeSigma        float32 // optional additional blur for a dark overlay (0 disables)
-	ShadeStrength     float64 // 0 disables
-	EdgeColor         color.NRGBA
+	Layer             geojson.LayerType
 	EdgeStrength      float64
+	TintStrength      float64
+	MaskNoiseStrength float64
+	ShadeStrength     float64
+	EdgeGamma         float64
+	MaskBlurSigma     float32
+	ShadeSigma        float32
 	EdgeInnerSigma    float32
 	EdgeOuterSigma    float32
-	EdgeGamma         float64
+	EdgeColor         color.NRGBA
+	Tint              color.NRGBA
 }
 
 // Params define the common watercolor processing knobs.
 type Params struct {
+	Styles         map[geojson.LayerType]LayerStyle
 	TileSize       int
-	BlurSigma      float32
 	NoiseScale     float64
 	NoiseStrength  float64
-	Threshold      uint8
-	AntialiasSigma float32
 	Seed           int64
 	OffsetX        int
 	OffsetY        int
-	Styles         map[geojson.LayerType]LayerStyle
+	BlurSigma      float32
+	AntialiasSigma float32
+	Threshold      uint8
 }
 
 // DefaultParams returns sensible defaults for the watercolor pipeline.
@@ -47,11 +47,11 @@ type Params struct {
 func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]image.Image) Params {
 	return Params{
 		TileSize:       tileSize,
-		BlurSigma:      2.0,
+		BlurSigma:      1.8,
 		NoiseScale:     30.0,
-		NoiseStrength:  0.3,
+		NoiseStrength:  0.28,
 		Threshold:      128,
-		AntialiasSigma: 0.5,
+		AntialiasSigma: 0.6,
 		Seed:           seed,
 		Styles: map[geojson.LayerType]LayerStyle{
 			geojson.LayerLand: {
@@ -98,7 +98,7 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 				Texture:           textures[geojson.LayerRoads],
 				Tint:              color.NRGBA{R: 230, G: 170, B: 110, A: 255},
 				TintStrength:      0.35,
-				MaskBlurSigma:     1.1,
+				MaskBlurSigma:     1.4,
 				MaskNoiseStrength: 0.25,
 				ShadeSigma:        0,
 				ShadeStrength:     0,
@@ -113,7 +113,7 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 				Texture:           textures[geojson.LayerHighways],
 				Tint:              color.NRGBA{R: 255, G: 230, B: 140, A: 255},
 				TintStrength:      0.15,
-				MaskBlurSigma:     0.9,
+				MaskBlurSigma:     1.1,
 				MaskNoiseStrength: 0.18,
 				ShadeSigma:        0,
 				ShadeStrength:     0,

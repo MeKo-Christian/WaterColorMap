@@ -95,7 +95,7 @@ func TestApplyEdgeDarkening(t *testing.T) {
 	}
 
 	darkened := result.NRGBAAt(0, 0)
-	if !(darkened.R < 200 && darkened.G < 200 && darkened.B < 200) {
+	if darkened.R >= 200 || darkened.G >= 200 || darkened.B >= 200 {
 		t.Fatalf("edge pixel should be darkened, got %+v", darkened)
 	}
 	if darkened.A != 255 {

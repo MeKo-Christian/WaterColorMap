@@ -130,12 +130,12 @@ Then each layer gets:
 
 ### 3.4 Work Items (to complete Phase 3 revision)
 
-- [ ] Add explicit mask composition ops (alpha extraction, union/max, intersect/min, invert) and unit tests.
-- [ ] Add a new “cross-layer mask construction” step before painting any layer.
-- [ ] Update the land pipeline to use `landMask := invert(process(nonLandMask))` instead of “land’s own alpha”.
-- [ ] Update parks/civic to be constrained to land (AND landMask).
-- [ ] Add a test that verifies land is fully excluded where water/roads are present.
-- [ ] Re-tune blur/noise/threshold parameters after behavior changes.
+- [x] Add explicit mask composition ops (alpha extraction, union/max, intersect/min, invert) and unit tests.
+- [x] Add a new “cross-layer mask construction” step before painting any layer.
+- [x] Update the land pipeline to use `landMask := invert(process(nonLandMask))` instead of “land’s own alpha”.
+- [x] Update parks/civic to be constrained to land (AND landMask).
+- [x] Add a test that verifies land is fully excluded where water/roads are present.
+- [x] Re-tune blur/noise/threshold parameters after behavior changes.
 
 ## Phase 4: Compositing and Tile Delivery
 

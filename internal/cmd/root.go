@@ -5,9 +5,10 @@ import (
 	"os"
 	"strings"
 
+	"log/slog"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"log/slog"
 )
 
 var cfgFile string
