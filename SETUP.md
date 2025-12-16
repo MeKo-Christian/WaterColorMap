@@ -119,6 +119,7 @@ go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 ### Configuration
 
 1. Copy example configuration:
+
    ```bash
    cp config.example.yaml config.yaml
    ```
@@ -168,6 +169,7 @@ just clean
 ### Issue: "mapnik-config not found"
 
 **Solution**:
+
 ```bash
 # Ensure libmapnik-dev is installed
 sudo apt install libmapnik-dev
@@ -182,6 +184,7 @@ ls -la /usr/bin/mapnik-config
 ### Issue: CGO compilation errors
 
 **Solution**:
+
 ```bash
 # Ensure build-essential is installed
 sudo apt install build-essential pkg-config
@@ -197,6 +200,7 @@ mapnik-config --libs
 ### Issue: "undefined reference to mapnik::" during linking
 
 **Solution**:
+
 ```bash
 # This should be handled automatically by the CGO directives in mapnik.go
 # If still failing, ensure libmapnik library is installed:
@@ -208,6 +212,7 @@ dpkg -l | grep libmapnik
 ### Issue: Docker build fails
 
 **Solution**:
+
 ```bash
 # Clean Docker build cache
 docker system prune -a
@@ -219,6 +224,7 @@ docker build --no-cache -f docker/Dockerfile -t watercolormap:latest .
 ### Issue: "permission denied" when running Docker
 
 **Solution**:
+
 ```bash
 # Add user to docker group
 sudo usermod -aG docker $USER
@@ -232,6 +238,7 @@ newgrp docker
 ### Ubuntu 22.04 LTS
 
 Mapnik 3.0.x is available - should work but 3.1.x recommended:
+
 ```bash
 sudo apt install libmapnik3.0 libmapnik-dev
 ```
@@ -249,6 +256,7 @@ brew install mapnik
 ```
 
 Note: On macOS, you may need to set CGO flags manually:
+
 ```bash
 export CGO_LDFLAGS="$(mapnik-config --libs)"
 export CGO_CXXFLAGS="$(mapnik-config --cxxflags)"

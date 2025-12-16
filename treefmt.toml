@@ -1,0 +1,65 @@
+# run with treefmt --allow-missing-formatter
+
+[global]
+excludes = [
+  # generated files
+  "**/generated.go",
+  "**/*_gen.go",
+  # assets
+  "assets/**/*.ico",
+  "assets/**/*.png",
+  # gitignore
+  "**/.gitignore",
+  # go.sum
+  "**/go.sum",
+  # go.mod
+  "**/go.mod",
+  # wasm artifacts
+  "docs/wasm-playground/wasm_exec.js",
+]
+
+### Misc
+
+[formatter.prettier]
+command = "prettier"
+options = ["-w"]
+includes = ["*.html", "*.css", "*.yaml", "*.yml", "*.js", "*.json", "*.md"]
+
+### TOML
+
+[formatter.taplo]
+command = "taplo"
+options = ["format"]
+includes = ["*.toml"]
+
+### Go
+
+[formatter.gofumpt]
+command = "gofumpt"
+options = ["-w"]
+includes = ["*.go"]
+
+[formatter.gci]
+command = "gci"
+options = ["-w"]
+includes = ["*.go"]
+priority = 1        # run after gofumpt
+
+### Shell
+
+[formatter.shellcheck]
+command = "shellcheck"
+includes = ["*.sh"]
+
+[formatter.shfmt]
+command = "shfmt"
+options = ["-s", "-w"]
+includes = ["*.sh"]
+priority = 1           # run after shellcheck
+
+### Dockerfile
+
+[formatter.dockerfile]
+command = "shfmt"
+options = ["-s", "-w"]
+includes = ["*/Dockerfile"]

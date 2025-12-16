@@ -57,7 +57,7 @@ func TestMapnikRenderer_WithOSMData(t *testing.T) {
 
 	// Create output directory
 	outputDir := "../../testdata/output"
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		t.Fatalf("Failed to create output directory: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func TestMapnikRenderer_RenderToFile(t *testing.T) {
 
 	// Create output directory
 	outputDir := "../../testdata/output"
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		t.Fatalf("Failed to create output directory: %v", err)
 	}
 

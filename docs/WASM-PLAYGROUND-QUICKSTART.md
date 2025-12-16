@@ -59,20 +59,24 @@ After running `just build-wasm`, you'll have:
 ## 🐛 Troubleshooting
 
 **"WASM module failed to load"**
+
 - Check that `wasm.wasm` and `wasm_exec.js` are in the same directory
 - Check browser console for specific errors
 
 **"Tiles not generating"**
+
 - Verify backend server is running on port 8080
 - Check browser Network tab for failed requests
 
 **"Cache seems stale"**
+
 - Click "Clear Cache" button in the info box
 - Or use browser DevTools: Application → Storage → IndexedDB
 
 ## 📚 Documentation
 
 See [WASM-PLAYGROUND-IMPLEMENTATION.md](./WASM-PLAYGROUND-IMPLEMENTATION.md) for:
+
 - Complete architecture overview
 - File structure
 - Performance characteristics
@@ -80,6 +84,7 @@ See [WASM-PLAYGROUND-IMPLEMENTATION.md](./WASM-PLAYGROUND-IMPLEMENTATION.md) for
 - Future enhancements
 
 See [docs/wasm-playground/README.md](./docs/wasm-playground/README.md) for:
+
 - Build instructions
 - Local testing guide
 - GitHub Pages setup

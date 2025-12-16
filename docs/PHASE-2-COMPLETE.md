@@ -7,6 +7,7 @@ Phase 2 has been successfully completed! We've built a complete multi-pass rende
 ## What Was Accomplished
 
 ### ✅ 2.1 Layer Design & Planning
+
 - Defined 5-layer hierarchy with color mapping to textures
 - Documented rendering order and mask extraction strategy
 - Created comprehensive layer specifications
@@ -14,12 +15,14 @@ Phase 2 has been successfully completed! We've built a complete multi-pass rende
 **Deliverable**: [docs/2.1-layer-design.md](2.1-layer-design.md)
 
 ### ✅ 2.2 Mapnik XML Styles
+
 - Created 5 complete Mapnik style files (water, land, parks, civic, roads)
 - Each layer uses solid colors for clean mask extraction
 - Road styles scale line width by importance
 - All styles configured for Web Mercator projection
 
 **Deliverables**:
+
 - [assets/styles/layers/water.xml](../assets/styles/layers/water.xml)
 - [assets/styles/layers/land.xml](../assets/styles/layers/land.xml)
 - [assets/styles/layers/parks.xml](../assets/styles/layers/parks.xml)
@@ -27,6 +30,7 @@ Phase 2 has been successfully completed! We've built a complete multi-pass rende
 - [assets/styles/layers/roads.xml](../assets/styles/layers/roads.xml)
 
 ### ✅ 2.3 Tile Coordinate System
+
 - Complete tile coordinate implementation (z/x/y format)
 - WGS84 and Web Mercator bounds calculation
 - Coordinate conversion utilities
@@ -36,6 +40,7 @@ Phase 2 has been successfully completed! We've built a complete multi-pass rende
 **Deliverable**: [internal/tile/coords.go](../internal/tile/coords.go)
 
 ### ✅ 2.4 Multi-Pass Rendering System
+
 - Full multi-pass rendering engine
 - OSM to GeoJSON conversion per layer
 - Temporary file management for datasources
@@ -43,6 +48,7 @@ Phase 2 has been successfully completed! We've built a complete multi-pass rende
 - Layer-by-layer rendering with error handling
 
 **Deliverables**:
+
 - [internal/renderer/multipass.go](../internal/renderer/multipass.go)
 - [internal/geojson/converter.go](../internal/geojson/converter.go)
 - Enhanced [internal/renderer/mapnik.go](../internal/renderer/mapnik.go)
@@ -88,6 +94,7 @@ Output: 5 separate PNG layer masks per tile
 ## Key Features
 
 ### Multi-Pass Rendering Engine
+
 - **Isolated Rendering**: Each layer rendered separately with no blending
 - **Dynamic Styles**: Mapnik styles loaded with runtime datasource injection
 - **Feature Filtering**: Only renders features relevant to each layer
@@ -95,6 +102,7 @@ Output: 5 separate PNG layer masks per tile
 - **Temporary Management**: Automatic cleanup of GeoJSON temp files
 
 ### GeoJSON Conversion
+
 - Converts OSM features to GeoJSON format
 - Preserves all properties and tags
 - Handles Points, LineStrings, and Polygons
@@ -102,6 +110,7 @@ Output: 5 separate PNG layer masks per tile
 - Combines civic and building features into civic layer
 
 ### Tile Coordinate System
+
 - Web Mercator tile coordinates (z/x/y)
 - Bounds calculation in both WGS84 and Mercator
 - Coordinate conversion utilities
@@ -113,6 +122,7 @@ Output: 5 separate PNG layer masks per tile
 All components have comprehensive test coverage:
 
 ### Tile Coordinate Tests
+
 ```
 ✅ TestCoordsString - String formatting
 ✅ TestCoordsPath - File path generation
@@ -126,6 +136,7 @@ All components have comprehensive test coverage:
 ```
 
 ### GeoJSON Conversion Tests
+
 ```
 ✅ TestToGeoJSON - Feature to GeoJSON conversion
 ✅ TestToGeoJSONBytes - JSON serialization
@@ -137,6 +148,7 @@ All components have comprehensive test coverage:
 ```
 
 ### Multi-Pass Renderer Tests
+
 ```
 ✅ TestMultiPassRendererCreation - Renderer initialization
 ✅ TestLayerPathHelpers - Path utilities
@@ -225,7 +237,9 @@ Phase 2 is considered complete when:
 ## Technical Highlights
 
 ### Smart Datasource Injection
+
 The renderer dynamically injects GeoJSON paths into Mapnik styles:
+
 ```go
 // Original style XML has placeholder
 <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>
@@ -237,10 +251,12 @@ modifiedXML := strings.ReplaceAll(styleXML,
 ```
 
 ### Layer-Specific Logic
+
 - **Land Layer**: No datasource needed, just background color
 - **Other Layers**: Convert features → GeoJSON → temporary file → render
 
 ### Error Handling
+
 - Layers with no features are skipped (not errors)
 - Missing style files are errors
 - Failed renders log warnings but don't stop other layers
@@ -256,6 +272,7 @@ modifiedXML := strings.ReplaceAll(styleXML,
 ## Ready for Phase 3! 🎨
 
 With Phase 2 complete, we're ready to move into Phase 3: Image Processing - Watercolor Effect, where we'll:
+
 1. Extract binary masks from the colored layer images
 2. Apply Gaussian blur for soft edges
 3. Add Perlin noise for organic texture

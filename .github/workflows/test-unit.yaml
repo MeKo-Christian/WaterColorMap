@@ -15,9 +15,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch main branch for version check test
-        run: git fetch origin main:main
-
       - name: Setup Go-Version
         uses: actions/setup-go@v5
         with:

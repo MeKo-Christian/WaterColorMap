@@ -4,6 +4,7 @@ This directory contains the browser playground (Leaflet + IndexedDB cache) and t
 build artifacts needed to run the Go WebAssembly module.
 
 **Files:**
+
 - `index.html` - Main playground page (served from GitHub Pages)
 - `wasm.js` - Browser code (Leaflet tile layer + IndexedDB caching)
 - `wasm_bootstrap.js` - Loads and starts the Go WASM module (`wasm.wasm`)
@@ -11,11 +12,13 @@ build artifacts needed to run the Go WebAssembly module.
 - `wasm.wasm` - Compiled WebAssembly module (built from `cmd/wasm`)
 
 **Build:**
+
 ```bash
 just build-wasm
 ```
 
 **Local testing:**
+
 ```bash
 just build-wasm-local
 # Open http://localhost:8000/wasm-playground/

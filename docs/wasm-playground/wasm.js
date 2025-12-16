@@ -63,6 +63,53 @@ class TileCache {
   }
 }
 
+// Simple semaphore for limiting concurrent operations
+class Semaphore {
+  constructor(max) {
+    this.max = max;
+    this.count = 0;
+    this.queue = [];
+  }
+
+  async acquire() {
+    if (this.count < this.max) {
+      this.count++;
+      return;
+    }
+    await new Promise((resolve) => this.queue.push(resolve));
+    this.count++;
+  }
+
+  release() {
+    this.count--;
+    if (this.queue.length > 0) {
+      const next = this.queue.shift();
+      next();
+    }
+  }
+}
+
+// Get concurrency from WASM or fallback to navigator.hardwareConcurrency or 4
+function getMaxConcurrency() {
+  // Try WASM function first
+  if (typeof watercolorGetConcurrency === "function") {
+    try {
+      const cores = watercolorGetConcurrency();
+      if (typeof cores === "number" && cores > 0) {
+        return cores;
+      }
+    } catch (e) {
+      // fall through
+    }
+  }
+  // Fallback to browser API
+  if (navigator.hardwareConcurrency) {
+    return navigator.hardwareConcurrency;
+  }
+  // Default
+  return 4;
+}
+
 // Demo UI Manager
 class WaterColorMapPlayground {
   constructor() {
@@ -71,6 +118,8 @@ class WaterColorMapPlayground {
     this.tileLayer = null;
     this.statusEl = document.getElementById("status");
     this.backendBaseUrl = this.getInitialBackendBaseUrl();
+    this.maxConcurrency = getMaxConcurrency();
+    this.fetchSemaphore = new Semaphore(this.maxConcurrency);
     this.init();
   }
 
@@ -97,7 +146,9 @@ class WaterColorMapPlayground {
 
     // Add controls
     this.setupControls();
-    this.updateStatus(`Ready. Backend: ${this.backendBaseUrl}`);
+    this.updateStatus(
+      `Ready. Backend: ${this.backendBaseUrl} (${this.maxConcurrency} CPUs)`,
+    );
   }
 
   createGridLayer() {
@@ -166,32 +217,39 @@ class WaterColorMapPlayground {
       return;
     }
 
-    // Fetch from backend
-    const url = this.makeTileUrl(z, x, y, is2x);
-    this.updateStatus(`Fetching z${z} ${x}/${y}...`);
-
-    let resp;
+    // Fetch from backend with concurrency limit
+    await this.fetchSemaphore.acquire();
     try {
-      resp = await fetch(url, { mode: "cors" });
-    } catch (err) {
-      img.src = this.makePlaceholderDataUrl("Backend unreachable");
-      this.updateStatus(`Backend unreachable: ${this.backendBaseUrl}`);
-      return;
+      const url = this.makeTileUrl(z, x, y, is2x);
+      this.updateStatus(
+        `Fetching z${z} ${x}/${y}... (${this.maxConcurrency} concurrent)`,
+      );
+
+      let resp;
+      try {
+        resp = await fetch(url, { mode: "cors" });
+      } catch (err) {
+        img.src = this.makePlaceholderDataUrl("Backend unreachable");
+        this.updateStatus(`Backend unreachable: ${this.backendBaseUrl}`);
+        return;
+      }
+
+      if (!resp.ok) {
+        img.src = this.makePlaceholderDataUrl(`HTTP ${resp.status}`);
+        this.updateStatus(`Tile fetch failed: HTTP ${resp.status}`);
+        return;
+      }
+
+      const blob = await resp.blob();
+      await this.cache.set(z, x, y, blob, is2x);
+
+      const objectUrl = URL.createObjectURL(blob);
+      img.onload = () => URL.revokeObjectURL(objectUrl);
+      img.onerror = () => URL.revokeObjectURL(objectUrl);
+      img.src = objectUrl;
+    } finally {
+      this.fetchSemaphore.release();
     }
-
-    if (!resp.ok) {
-      img.src = this.makePlaceholderDataUrl(`HTTP ${resp.status}`);
-      this.updateStatus(`Tile fetch failed: HTTP ${resp.status}`);
-      return;
-    }
-
-    const blob = await resp.blob();
-    await this.cache.set(z, x, y, blob, is2x);
-
-    const objectUrl = URL.createObjectURL(blob);
-    img.onload = () => URL.revokeObjectURL(objectUrl);
-    img.onerror = () => URL.revokeObjectURL(objectUrl);
-    img.src = objectUrl;
   }
 
   makePlaceholderDataUrl(message) {
@@ -199,7 +257,7 @@ class WaterColorMapPlayground {
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
   <rect width="100%" height="100%" fill="#f5f5f5"/>
   <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#777">${String(
-    message
+    message,
   )
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -232,7 +290,7 @@ class WaterColorMapPlayground {
     document.getElementById("toggleMode").addEventListener("click", () => {
       const next = prompt(
         "Backend base URL (example: http://127.0.0.1:8080).\n\nYou can also set ?backend=... in the URL.",
-        this.backendBaseUrl
+        this.backendBaseUrl,
       );
       if (!next) return;
       this.backendBaseUrl = next.replace(/\/$/, "");

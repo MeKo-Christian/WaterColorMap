@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"log/slog"
 
 	"github.com/MeKo-Tech/watercolormap/internal/composite"
 	"github.com/MeKo-Tech/watercolormap/internal/geojson"
@@ -86,7 +85,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		}
 	}
 
-	if err := os.MkdirAll(g.outputDir, 0755); err != nil {
+	if err := os.MkdirAll(g.outputDir, 0o755); err != nil {
 		return "", "", fmt.Errorf("failed to create output dir: %w", err)
 	}
 

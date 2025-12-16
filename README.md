@@ -83,12 +83,13 @@ WaterColorMap can generate static PNG tiles; you can serve them with any web ser
 If you serve the `tiles/` folder (for example with `python3 -m http.server 8000` from the repo root), you can point Leaflet at the default flat file naming scheme (`z{z}_x{x}_y{y}.png`) like this:
 
 ```js
-const layer = L.tileLayer('', {
+const layer = L.tileLayer("", {
   maxZoom: 16,
-  attribution: '© OpenStreetMap contributors'
+  attribution: "© OpenStreetMap contributors",
 });
 
-layer.getTileUrl = ({ x, y, z }) => `http://localhost:8000/tiles/z${z}_x${x}_y${y}.png`;
+layer.getTileUrl = ({ x, y, z }) =>
+  `http://localhost:8000/tiles/z${z}_x${x}_y${y}.png`;
 layer.addTo(map);
 ```
 

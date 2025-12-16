@@ -2,7 +2,7 @@
 # Copy this to config.yaml and adjust as needed
 
 # Data source configuration
-data-source: "overpass"  # Options: overpass, protomaps, openmaptiles
+data-source: "overpass" # Options: overpass, protomaps, openmaptiles
 
 # Output settings
 output-dir: "./tiles"
@@ -14,7 +14,7 @@ verbose: false
 overpass:
   endpoint: "https://overpass-api.de/api/interpreter"
   timeout: 30s
-  rate-limit: 2  # requests per second
+  rate-limit: 2 # requests per second
   retry:
     max-attempts: 3
     backoff: 2s

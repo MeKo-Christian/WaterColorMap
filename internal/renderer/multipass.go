@@ -65,12 +65,12 @@ func NewMultiPassRenderer(stylesDir, outputDir string, tileSize int, padPx int) 
 
 	// Create temp directory for GeoJSON files
 	tempDir := filepath.Join(os.TempDir(), "watercolormap")
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
+	if err := os.MkdirAll(tempDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
 	// Create output directory
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -171,7 +171,7 @@ func (r *MultiPassRenderer) renderLayer(
 
 	// Write GeoJSON to temporary file
 	geoJSONPath := filepath.Join(r.tempDir, fmt.Sprintf("%s_%s.geojson", coords.String(), layer))
-	if err := os.WriteFile(geoJSONPath, geoJSONBytes, 0644); err != nil {
+	if err := os.WriteFile(geoJSONPath, geoJSONBytes, 0o644); err != nil {
 		result.Error = fmt.Errorf("failed to write GeoJSON: %w", err)
 		return result
 	}

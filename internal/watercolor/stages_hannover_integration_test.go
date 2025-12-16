@@ -19,7 +19,6 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/texture"
 	"github.com/MeKo-Tech/watercolormap/internal/tile"
 	"github.com/MeKo-Tech/watercolormap/internal/types"
-
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/maptile"
 )

@@ -21,15 +21,12 @@ Successfully implemented a WebAssembly-based browser playground for WaterColorMa
      - Info box showing cache status and tile loading
      - Cache management controls (clear cache, toggle mode)
      - Responsive design with mobile support
-   
    - **JavaScript Controller** (`wasm.js`): 422-line module providing:
      - `TileCache` class: IndexedDB-based client-side tile caching
      - `WaterColorMapPlayground` class: Leaflet map initialization and integration
      - Async tile loading with cache-first strategy
      - Timestamp-based cache entries for cache invalidation
-   
    - **WASM Runtime** (`wasm_exec.js`): Go's standard WASM runtime loader
-   
    - **Documentation** (`README.md`): Build and testing instructions
 
 3. **Build System** (`Justfile`)
@@ -81,7 +78,7 @@ scripts/
 2. **Tile Request**: Leaflet requests tile at URL pattern `/tiles/z{z}_x{x}_y{y}.png`
 3. **Cache Check**: JavaScript checks IndexedDB cache for tile
 4. **Cache Hit**: Return cached blob immediately
-5. **Cache Miss**: 
+5. **Cache Miss**:
    - Call WASM function `watercolorGenerateTile({ zoom, x, y, hidpi, base64 })`
    - WASM module returns message indicating server backend required
    - JavaScript could extend this to call backend `watercolormap serve` endpoint
@@ -136,6 +133,7 @@ just build-wasm-local
 ### GitHub Pages Deployment
 
 1. Push changes to `main` branch:
+
    ```bash
    git add .
    git commit -m "WASM: Playground implementation"
@@ -171,7 +169,7 @@ async loadTileAsync(z, x, y, is2x = false) {
   const suffix = is2x ? '@2x' : '';
   const cached = await this.cache.get(z, x, y, is2x);
   if (cached) return cached;
-  
+
   // Try backend server (could be localhost:8080 when running serve)
   try {
     const response = await fetch(`http://localhost:8080/tiles/z${z}_x${x}_y${y}${suffix}.png`);
@@ -183,7 +181,7 @@ async loadTileAsync(z, x, y, is2x = false) {
   } catch (err) {
     console.warn('Backend server not available:', err);
   }
-  
+
   return null; // Show placeholder
 }
 ```

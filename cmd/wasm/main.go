@@ -9,6 +9,8 @@ import (
 	"syscall/js"
 )
 
+const defaultConcurrency = 4
+
 // GenerateTileRequest represents a tile generation request from JS
 type GenerateTileRequest struct {
 	Zoom  int  `json:"zoom"`
@@ -20,6 +22,26 @@ type GenerateTileRequest struct {
 type GenerateTileResponse struct {
 	Key      string `json:"key"`
 	Filename string `json:"filename"`
+}
+
+// getConcurrency returns the recommended number of concurrent operations.
+// Uses navigator.hardwareConcurrency if available, otherwise defaults to 4.
+func getConcurrency(_ js.Value, _ []js.Value) interface{} {
+	navigator := js.Global().Get("navigator")
+	if navigator.IsUndefined() || navigator.IsNull() {
+		return defaultConcurrency
+	}
+
+	hwConcurrency := navigator.Get("hardwareConcurrency")
+	if hwConcurrency.IsUndefined() || hwConcurrency.IsNull() {
+		return defaultConcurrency
+	}
+
+	cores := hwConcurrency.Int()
+	if cores < 1 {
+		return defaultConcurrency
+	}
+	return cores
 }
 
 // generateTile is called from JavaScript to generate a tile
@@ -59,6 +81,7 @@ func main() {
 	c := make(chan struct{})
 
 	js.Global().Set("watercolorGenerateTile", js.FuncOf(generateTile))
+	js.Global().Set("watercolorGetConcurrency", js.FuncOf(getConcurrency))
 	js.Global().Set("watercolorInit", js.FuncOf(initGame))
 
 	fmt.Println("WaterColorMap WASM module loaded")

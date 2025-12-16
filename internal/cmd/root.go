@@ -2,17 +2,18 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
-
-	"log/slog"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
-var cfgFile string
-var logger *slog.Logger
+var (
+	cfgFile string
+	logger  *slog.Logger
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "watercolormap",

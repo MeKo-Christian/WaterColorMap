@@ -54,11 +54,22 @@ test-coverage:
 
 # Format code
 fmt:
-    go fmt ./...
+    treefmt --allow-missing-formatter
 
-# Check if code is formatted (alias for CI)
+# Check if code is formatted (for CI)
 check-formatted:
-    just fmt
+    @echo "Checking if code is formatted..."
+    @if ! git diff --exit-code > /dev/null 2>&1; then \
+        echo "ERROR: Working directory has uncommitted changes. Commit or stash changes before running format check."; \
+        exit 1; \
+    fi
+    treefmt --allow-missing-formatter
+    @if ! git diff --exit-code > /dev/null 2>&1; then \
+        echo "ERROR: Code is not formatted. Run 'just fmt' to format."; \
+        git diff; \
+        exit 1; \
+    fi
+    @echo "Code is properly formatted"
 
 # Setup dependencies (alias for CI)
 setup-deps:

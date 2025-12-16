@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/MeKo-Tech/watercolormap/internal/datasource"
@@ -28,7 +29,7 @@ func init() {
 
 	serveCmd.Flags().Bool("generate-missing", true, "Generate missing tiles on-demand and cache them to disk")
 	serveCmd.Flags().Bool("disable-cache", false, "Always regenerate tiles (still writes to disk)")
-	serveCmd.Flags().Int("max-concurrent-generations", 1, "Max concurrent tile generations")
+	serveCmd.Flags().Int("max-concurrent-generations", runtime.NumCPU(), "Max concurrent tile generations (default: number of CPUs)")
 	serveCmd.Flags().Duration("generation-timeout", 2*time.Minute, "Timeout per tile generation")
 	serveCmd.Flags().String("cache-control", "no-store", "Cache-Control header for served tiles")
 
