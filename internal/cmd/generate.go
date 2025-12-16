@@ -27,6 +27,8 @@ func init() {
 	generateCmd.Flags().IntP("y", "y", 0, "Y tile coordinate")
 	generateCmd.Flags().Bool("force", false, "Force regeneration even if tile exists")
 	generateCmd.Flags().Int("tile-size", 256, "Tile size in pixels (typically 256 or 512 for Hi-DPI)")
+	generateCmd.Flags().Bool("hidpi", false, "Also generate a 2x (@2x) tile alongside the base tile")
+	generateCmd.Flags().String("png-compression", "default", "PNG compression (default, speed, best, none)")
 	generateCmd.Flags().Int64("seed", 1337, "Deterministic seed for noise/texture alignment")
 	generateCmd.Flags().Bool("keep-layers", false, "Keep intermediate rendered layer PNGs for debugging")
 
@@ -45,6 +47,12 @@ func init() {
 	if err := viper.BindPFlag("generate.tile_size", generateCmd.Flags().Lookup("tile-size")); err != nil {
 		panic(fmt.Sprintf("failed to bind flag: %v", err))
 	}
+	if err := viper.BindPFlag("generate.hidpi", generateCmd.Flags().Lookup("hidpi")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
+	if err := viper.BindPFlag("generate.png_compression", generateCmd.Flags().Lookup("png-compression")); err != nil {
+		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	}
 	if err := viper.BindPFlag("generate.seed", generateCmd.Flags().Lookup("seed")); err != nil {
 		panic(fmt.Sprintf("failed to bind flag: %v", err))
 	}
@@ -61,6 +69,8 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	outputDir := viper.GetString("output-dir")
 	dataSourceName := viper.GetString("data-source")
 	tileSize := viper.GetInt("generate.tile_size")
+	hidpi := viper.GetBool("generate.hidpi")
+	pngCompression := viper.GetString("generate.png_compression")
 	seed := viper.GetInt64("generate.seed")
 	keepLayers := viper.GetBool("generate.keep_layers")
 
@@ -76,6 +86,8 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		"force", force,
 		"data_source", dataSourceName,
 		"tile_size", tileSize,
+		"hidpi", hidpi,
+		"png_compression", pngCompression,
 		"seed", seed,
 		"keep_layers", keepLayers,
 	)
@@ -95,12 +107,14 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	stylesDir := filepath.Join("assets", "styles")
 	texturesDir := filepath.Join("assets", "textures")
 
-	gen, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize, seed, keepLayers, logger)
+	gen, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize, seed, keepLayers, logger, pipeline.GeneratorOptions{
+		PNGCompression: pngCompression,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to init generator: %w", err)
 	}
 
-	path, layersDir, err := gen.Generate(context.Background(), coords, force)
+	path, layersDir, err := gen.Generate(context.Background(), coords, force, "")
 	if err != nil {
 		return fmt.Errorf("failed to generate tile: %w", err)
 	}
@@ -110,5 +124,20 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		logFields = append(logFields, "layers_dir", layersDir)
 	}
 	logger.Info("Tile generated", logFields...)
+
+	if hidpi {
+		gen2x, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize*2, seed, keepLayers, logger, pipeline.GeneratorOptions{
+			PNGCompression: pngCompression,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to init hidpi generator: %w", err)
+		}
+		path2x, _, err := gen2x.Generate(context.Background(), coords, force, "@2x")
+		if err != nil {
+			return fmt.Errorf("failed to generate hidpi tile: %w", err)
+		}
+		logger.Info("HiDPI tile generated", "coords", coords.String(), "path", path2x)
+	}
+
 	return nil
 }

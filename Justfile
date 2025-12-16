@@ -22,6 +22,23 @@ build-release version:
 run *args:
     go run ./cmd/watercolormap {{args}}
 
+# Serve tiles + Leaflet demo (generates missing tiles on-demand)
+serve *args:
+    go run ./cmd/watercolormap serve {{args}}
+
+# Build WASM module for browser playground
+build-wasm:
+    @echo "Building WASM module..."
+    mkdir -p docs/wasm-playground
+    GOOS=js GOARCH=wasm go build -o docs/wasm-playground/wasm.wasm ./cmd/wasm
+    bash scripts/copy-wasm-exec.sh
+    @echo "WASM build complete. Artifacts in docs/wasm-playground/"
+
+# Build and serve WASM locally (for testing)
+build-wasm-local: build-wasm
+    @echo "Serving WASM playground at http://localhost:8000/wasm-playground/"
+    cd docs && python3 -m http.server 8000
+
 # Run tests
 test:
     go test ./... -v
@@ -74,6 +91,10 @@ lint-fix:
 clean:
     rm -rf bin/
     rm -f coverage.out coverage.html
+
+# Clean WASM artifacts
+clean-wasm:
+    rm -f docs/wasm-playground/*.wasm docs/wasm-playground/wasm_exec.js
 
 # Clean generated tiles
 clean-tiles:

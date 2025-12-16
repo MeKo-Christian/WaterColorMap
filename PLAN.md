@@ -153,24 +153,65 @@ Then each layer gets:
 - [x] Add regression test comparing rendered road width/alpha at two zooms to prove scaling works
 
 ### 4.3 Labels Policy (Stamen default: none)
-- [ ] Decide default posture: ship label-free tiles; document why (matches Stamen aesthetic)
-- [ ] Optional path: Mapnik text style or external transparent label tiles; gate behind config flag
-- [ ] Quick sanity render to confirm label legibility and halo/alpha settings if enabled
+- [x] Ship label-free tiles (matches Stamen aesthetic)
+- [x] Keep Mapnik styles label-free (current state: no labels)
 
 ### 4.4 Seam & Alignment Verification
-- [ ] Integration test rendering at least 2×2 adjacent tiles and diffing touching edges for pixel match
-- [ ] Verify noise/texture offsets remain globally aligned; emit diagnostics when mismatches occur
-- [ ] Document a manual Leaflet checklist for seam inspection
+- [x] Use metatile padding + crop during generation to avoid blur/edge artifacts at tile borders
+- [ ] Add an integration test rendering adjacent tiles and checking border deltas stay within tolerance
+- [ ] Document a quick manual seam inspection checklist (Leaflet)
 
 ### 4.5 Output Formats & Hi-DPI
-- [ ] Add `--hidpi`/config toggle to emit 512 px `@2x` tiles alongside 256 px output using existing tile-size plumbing
-- [ ] Use `png.Encoder` with configurable compression level; benchmark default vs best speed
-- [ ] Ensure filename pattern matches Leaflet retina expectations; cover with a small encoding test
+
+- [x] Add `--hidpi`/config toggle to emit 512px `@2x` tiles alongside 256px output
+- [ ] Ensure watercolor offsets/noise/texture stay globally aligned between 256px and 512px outputs (same world anchoring)
+- [x] Define the on-disk naming/layout for retina (`@2x`) and document the matching Leaflet config
+- [x] Use `png.Encoder` with configurable compression level; keep defaults fast and add a reproducible “best compression” mode
 
 ### 4.6 Leaflet Demo & Local Serving
-- [ ] Provide `just serve` (or tiny Go static server) to host `tiles/`
-- [ ] Create minimal `docs/leaflet-demo.html` pointing at local tiles with attribution and sane zoom bounds
-- [ ] Smoke-test demo after generating a Hanover sample set
+
+- [x] Add a dedicated demo server command (prefer `watercolormap serve`) for local viewing and sharing screenshots
+
+- [x] Support serving tiles from the existing flat naming scheme (`tiles/z{z}_x{x}_y{y}.png` and `@2x`)
+- [x] Provide a Leaflet demo page served by the same server (no external build tooling)
+
+**Server requirements**
+
+- [x] HTTP server with configurable listen address (default `127.0.0.1:8080`)
+- [x] Configurable tile directory (default `./tiles`) and static assets root (default `./docs`)
+- [x] Routes:
+	- [x] `GET /healthz` → plain `ok`
+	- [x] `GET /` → redirect to `/demo/`
+	- [x] `GET /demo/` → serve the Leaflet demo page
+	- [x] `GET /tiles/...` → serve tile PNGs from disk (with on-demand generation if missing)
+- [x] Friendly 404 for missing tiles (include requested z/x/y in the response)
+- [x] Correct headers for PNG (`Content-Type: image/png`) and optional dev-friendly caching (`Cache-Control: no-store` by default)
+- [ ] Optional CORS toggle for tile requests (off by default; useful for embedding the demo elsewhere)
+
+**Leaflet demo page requirements**
+
+- [x] Minimal HTML (no build step) at `docs/leaflet-demo/index.html`
+- [x] Uses Leaflet via CDN
+- [x] Uses the demo server as the tile source (no hard-coded host; derive from `window.location`)
+- [x] Tile URL strategy:
+	- [x] Default: request tiles using the project's flat file naming scheme
+	- [x] HiDPI: support `@2x` tiles via Leaflet `detectRetina` (or a simple DPR switch) when available
+- [x] Sane defaults: initial view centered on Hanover, min/max zoom aligned with what we generate (Phase 4.8)
+- [x] Attribution included on the map (OSM) and a short note that the style is "Watercolor-inspired"
+
+**Developer ergonomics**
+
+- [x] Add `just serve` to run the server against `./tiles` (and optionally `just demo` as an alias)
+- [ ] Document quickstart in README: generate a tile set → run server → open browser URL
+
+**Smoke test / acceptance**
+
+- [ ] Generate a small Hanover set (e.g., a 3×3 grid at z13) and verify:
+	- [ ] Demo page loads without console errors
+	- [ ] Tiles load and pan smoothly
+	- [ ] HiDPI tiles render when present
+	- [ ] Missing tiles are generated on-demand and displayed
+	- [ ] Regenerated tiles are cached to disk for subsequent requests
 
 ### 4.7 Visual Tuning Controls
 - [ ] Expose per-layer watercolor params (tint, blur sigma, noise strength, edge colors) via config with Phase 3 defaults
@@ -181,6 +222,10 @@ Then each layer gets:
 - [ ] Add CLI flags for bbox/zoom-range batch generation (reuse `tile.TileRange`)
 - [ ] Script batch generation for Hanover (z10–15) with progress logging, `--force`, and resumable output dirs
 - [ ] Verify the produced set in the Leaflet demo and record bounds/zooms used
+
+### 4.9 TileJSON / Delivery Metadata
+- [ ] Emit a minimal `tilejson.json` (bounds, min/max zoom, format, tile URL template) for the generated set
+- [ ] Include required attribution text (Stamen-style / OSM) in the metadata and demo
 
 ## Phase 5: Scaling and Modern Improvements
 
@@ -228,6 +273,19 @@ Then each layer gets:
 - [ ] Implement LRU cache or Redis
 - [ ] Test server under load
 - [ ] Optimize for cache performance
+
+### 5.6a Browser Playground (WebAssembly On-Demand)
+- [ ] Compile tile generator to WebAssembly (Go → WASM) using TinyGo or standard Go WASM toolchain
+- [ ] Create a minimal browser UI with Leaflet + IndexedDB/localStorage for client-side tile caching
+- [ ] Implement on-demand tile generation in the browser (fetch OSM data → render → cache → display)
+- [ ] Handle browser memory/performance constraints (limit concurrent generations, use web workers if needed)
+- [ ] Set up GitHub Actions CI workflow to build WASM artifact on commits
+- [ ] Deploy built WASM + demo HTML to GitHub Pages (gh-pages branch or Pages deployment)
+- [ ] Display rendering progress and cache status in the UI
+- [ ] Document browser limitations and expected slowness without proper caching backend
+- [ ] Add disclaimer that this is a proof-of-concept playground, not production-grade
+
+**Note**: Rendering will be intentionally slow in the browser (seconds per tile) without backend caching. Useful for demonstration and exploration, but refer users to the hosted service for production use.
 
 ### 5.7 Data Update Pipeline
 - [ ] Design periodic data refresh strategy

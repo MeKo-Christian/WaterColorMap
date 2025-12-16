@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WaterColorMap Demo</title>
+
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <style>
+      html,
+      body,
+      #map {
+        height: 100%;
+        margin: 0;
+      }
+      .info {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 8px 10px;
+        font: 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        border-radius: 6px;
+        z-index: 1000;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+    <div class="info">
+      <div><strong>WaterColorMap</strong> demo</div>
+      <div>Watercolor-inspired raster tiles (OSM data).</div>
+    </div>
+
+    <script>
+      // Hanover-ish default view
+      const center = [52.375, 9.732];
+
+      const map = L.map("map", {
+        center,
+        zoom: 13,
+        minZoom: 0,
+        maxZoom: 18,
+      });
+
+      const tiles = L.tileLayer("", {
+        attribution: "© OpenStreetMap contributors",
+        // Leaflet will request @2x automatically when detectRetina=true.
+        detectRetina: true,
+        maxZoom: 18,
+      });
+
+      tiles.getTileUrl = ({ x, y, z }) => {
+        const dpr = window.devicePixelRatio || 1;
+        const suffix = dpr >= 2 ? "@2x" : "";
+        return `${window.location.origin}/tiles/z${z}_x${x}_y${y}${suffix}.png`;
+      };
+
+      tiles.addTo(map);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WaterColorMap WASM Playground</title>
+
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <style>
+      html,
+      body,
+      #map {
+        height: 100%;
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+
+      .info-box {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 12px;
+        border-radius: 8px;
+        max-width: 300px;
+        z-index: 1000;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .info-box h3 {
+        margin: 0 0 8px 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .info-box p {
+        margin: 0 0 6px 0;
+        font-size: 12px;
+        line-height: 1.4;
+        color: #666;
+      }
+
+      #status {
+        font-size: 11px;
+        color: #999;
+        font-style: italic;
+      }
+
+      .btn {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 6px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        margin-right: 6px;
+        margin-bottom: 6px;
+      }
+
+      .btn:hover {
+        background: #0056b3;
+      }
+
+      #controls {
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #eee;
+      }
+
+      .warning {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        color: #856404;
+        padding: 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        margin-top: 8px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="map"></div>
+
+    <div class="info-box">
+      <h3>🎨 WaterColorMap WASM</h3>
+      <p>Experimental browser-based tile playground</p>
+      <p>
+        Pan and zoom to request tiles. They are generated on-demand via WebAssembly
+        and cached locally.
+      </p>
+      <div id="status">Initializing...</div>
+      <div id="controls"></div>
+      <div class="warning">
+        ⚠️ <strong>Experimental:</strong> Tile generation in the browser is very slow. This is a
+        proof-of-concept. For production use, run the hosted server.
+      </div>
+    </div>
+
+    <script src="wasm.js"></script>
+    <script async src="wasm.wasm.js"></script>
+  </body>
+</html>

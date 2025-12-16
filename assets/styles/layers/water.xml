@@ -10,35 +10,9 @@
     </Rule>
   </Style>
 
-  <Style name="waterways">
-    <Rule>
-      <!-- Rivers and streams as lines -->
-      <Filter>[waterway] = 'river'</Filter>
-      <LineSymbolizer stroke="#0000FF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
-    </Rule>
-    <Rule>
-      <Filter>[waterway] = 'stream' or [waterway] = 'canal'</Filter>
-      <LineSymbolizer stroke="#0000FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-    </Rule>
-    <Rule>
-      <!-- Small waterways -->
-      <Filter>[waterway] != ''</Filter>
-      <LineSymbolizer stroke="#0000FF" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
-    </Rule>
-  </Style>
-
   <!-- Data Layers -->
   <Layer name="water" srs="+proj=longlat +datum=WGS84 +no_defs">
     <StyleName>water</StyleName>
-    <Datasource>
-      <Parameter name="type">ogr</Parameter>
-      <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>
-      <Parameter name="layer">LAYER_PLACEHOLDER</Parameter>
-    </Datasource>
-  </Layer>
-
-  <Layer name="waterways" srs="+proj=longlat +datum=WGS84 +no_defs">
-    <StyleName>waterways</StyleName>
     <Datasource>
       <Parameter name="type">ogr</Parameter>
       <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>

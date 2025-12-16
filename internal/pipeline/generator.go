@@ -7,6 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"log/slog"
 
@@ -19,6 +20,13 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/types"
 	"github.com/MeKo-Tech/watercolormap/internal/watercolor"
 )
+
+// GeneratorOptions controls output and encoding behavior.
+type GeneratorOptions struct {
+	// PNGCompression controls PNG encoding. Supported values:
+	// "default", "speed", "best", "none".
+	PNGCompression string
+}
 
 // DataSource fetches OSM features for a tile coordinate.
 type DataSource interface {
@@ -39,10 +47,11 @@ type Generator struct {
 	tileSize   int
 	seed       int64
 	keepLayers bool
+	options    GeneratorOptions
 }
 
 // NewGenerator loads textures and prepares a generator.
-func NewGenerator(ds DataSource, stylesDir, texturesDir, outputDir string, tileSize int, seed int64, keepLayers bool, logger *slog.Logger) (*Generator, error) {
+func NewGenerator(ds DataSource, stylesDir, texturesDir, outputDir string, tileSize int, seed int64, keepLayers bool, logger *slog.Logger, opts GeneratorOptions) (*Generator, error) {
 	if tileSize <= 0 {
 		return nil, fmt.Errorf("tile size must be positive")
 	}
@@ -61,13 +70,15 @@ func NewGenerator(ds DataSource, stylesDir, texturesDir, outputDir string, tileS
 		seed:       seed,
 		keepLayers: keepLayers,
 		logger:     logger,
+		options:    opts,
 	}, nil
 }
 
 // Generate renders, paints, composites, and writes the final tile PNG.
 // Returns the final tile path and (optionally) the layer directory when kept.
-func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool) (string, string, error) {
-	finalPath := filepath.Join(g.outputDir, coords.Path("png"))
+func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool, filenameSuffix string) (string, string, error) {
+	suffix := strings.TrimSpace(filenameSuffix)
+	finalPath := filepath.Join(g.outputDir, fmt.Sprintf("%s%s.png", coords.String(), suffix))
 	if !force {
 		if _, err := os.Stat(finalPath); err == nil {
 			g.log().Info("Tile already exists; skipping", "coords", coords.String(), "path", finalPath)
@@ -281,7 +292,21 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	}
 	defer outFile.Close() // nolint:errcheck
 
-	if err := png.Encode(outFile, final); err != nil {
+	enc := png.Encoder{CompressionLevel: png.DefaultCompression}
+	switch strings.ToLower(strings.TrimSpace(g.options.PNGCompression)) {
+	case "", "default":
+		enc.CompressionLevel = png.DefaultCompression
+	case "speed", "fast", "best-speed":
+		enc.CompressionLevel = png.BestSpeed
+	case "best", "best-compression":
+		enc.CompressionLevel = png.BestCompression
+	case "none", "no", "nocompression", "no-compression":
+		enc.CompressionLevel = png.NoCompression
+	default:
+		// Keep default on unknown values.
+		enc.CompressionLevel = png.DefaultCompression
+	}
+	if err := enc.Encode(outFile, final); err != nil {
 		return "", "", fmt.Errorf("failed to encode final tile: %w", err)
 	}
 
