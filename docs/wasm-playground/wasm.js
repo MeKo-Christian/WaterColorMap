@@ -1,6 +1,6 @@
 // Browser-based IndexedDB cache for tiles
 class TileCache {
-  constructor(dbName = 'watercolormap-tiles') {
+  constructor(dbName = "watercolormap-tiles") {
     this.dbName = dbName;
     this.db = null;
     this.ready = this.init();
@@ -16,8 +16,8 @@ class TileCache {
       };
       req.onupgradeneeded = (e) => {
         const db = e.target.result;
-        if (!db.objectStoreNames.contains('tiles')) {
-          db.createObjectStore('tiles', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains("tiles")) {
+          db.createObjectStore("tiles", { keyPath: "key" });
         }
       };
     });
@@ -25,12 +25,12 @@ class TileCache {
 
   async get(z, x, y, is2x = false) {
     await this.ready;
-    const suffix = is2x ? '@2x' : '';
+    const suffix = is2x ? "@2x" : "";
     const key = `z${z}_x${x}_y${y}${suffix}`;
 
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['tiles'], 'readonly');
-      const store = tx.objectStore('tiles');
+      const tx = this.db.transaction(["tiles"], "readonly");
+      const store = tx.objectStore("tiles");
       const req = store.get(key);
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve(req.result?.blob);
@@ -39,12 +39,12 @@ class TileCache {
 
   async set(z, x, y, blob, is2x = false) {
     await this.ready;
-    const suffix = is2x ? '@2x' : '';
+    const suffix = is2x ? "@2x" : "";
     const key = `z${z}_x${x}_y${y}${suffix}`;
 
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['tiles'], 'readwrite');
-      const store = tx.objectStore('tiles');
+      const tx = this.db.transaction(["tiles"], "readwrite");
+      const store = tx.objectStore("tiles");
       const req = store.put({ key, blob, timestamp: Date.now() });
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve();
@@ -54,8 +54,8 @@ class TileCache {
   async clear() {
     await this.ready;
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(['tiles'], 'readwrite');
-      const store = tx.objectStore('tiles');
+      const tx = this.db.transaction(["tiles"], "readwrite");
+      const store = tx.objectStore("tiles");
       const req = store.clear();
       req.onerror = () => reject(req.error);
       req.onsuccess = () => resolve();
@@ -69,22 +69,22 @@ class WaterColorMapPlayground {
     this.cache = new TileCache();
     this.map = null;
     this.tileLayer = null;
-    this.statusEl = document.getElementById('status');
+    this.statusEl = document.getElementById("status");
     this.backendBaseUrl = this.getInitialBackendBaseUrl();
     this.init();
   }
 
   getInitialBackendBaseUrl() {
     const params = new URLSearchParams(window.location.search);
-    const fromQuery = params.get('backend');
+    const fromQuery = params.get("backend");
     // Default to localhost for local development.
-    return (fromQuery || 'http://127.0.0.1:8080').replace(/\/$/, '');
+    return (fromQuery || "http://127.0.0.1:8080").replace(/\/$/, "");
   }
 
   async init() {
     // Initialize map
     const hanoverCenter = [52.375, 9.732];
-    this.map = L.map('map', {
+    this.map = L.map("map", {
       center: hanoverCenter,
       zoom: 13,
       minZoom: 10,
@@ -104,9 +104,9 @@ class WaterColorMapPlayground {
     const self = this;
     return L.GridLayer.extend({
       createTile(coords, done) {
-        const img = document.createElement('img');
-        img.alt = '';
-        img.setAttribute('role', 'presentation');
+        const img = document.createElement("img");
+        img.alt = "";
+        img.setAttribute("role", "presentation");
 
         const dpr = window.devicePixelRatio || 1;
         const is2x = dpr >= 2;
@@ -114,17 +114,18 @@ class WaterColorMapPlayground {
         const x = coords.x;
         const y = coords.y;
 
-        self.loadTileToImg({ z, x, y, is2x, img })
+        self
+          .loadTileToImg({ z, x, y, is2x, img })
           .then(() => done(null, img))
           .catch((err) => {
-            console.warn('tile load failed', err);
+            console.warn("tile load failed", err);
             done(err, img);
           });
 
         return img;
       },
     })({
-      attribution: '© OpenStreetMap contributors | WaterColorMap Playground',
+      attribution: "© OpenStreetMap contributors | WaterColorMap Playground",
       tileSize: 256,
       maxZoom: 16,
       minZoom: 10,
@@ -135,10 +136,10 @@ class WaterColorMapPlayground {
   }
 
   makeTileUrl(z, x, y, is2x) {
-    const suffix = is2x ? '@2x' : '';
+    const suffix = is2x ? "@2x" : "";
 
     // If WASM is available, let it compute the canonical filename.
-    if (typeof watercolorGenerateTile === 'function') {
+    if (typeof watercolorGenerateTile === "function") {
       try {
         const req = { zoom: z, x, y, hidpi: is2x };
         const res = watercolorGenerateTile(JSON.stringify(req));
@@ -171,9 +172,9 @@ class WaterColorMapPlayground {
 
     let resp;
     try {
-      resp = await fetch(url, { mode: 'cors' });
+      resp = await fetch(url, { mode: "cors" });
     } catch (err) {
-      img.src = this.makePlaceholderDataUrl('Backend unreachable');
+      img.src = this.makePlaceholderDataUrl("Backend unreachable");
       this.updateStatus(`Backend unreachable: ${this.backendBaseUrl}`);
       return;
     }
@@ -198,14 +199,17 @@ class WaterColorMapPlayground {
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
   <rect width="100%" height="100%" fill="#f5f5f5"/>
   <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#777">${String(
-    message,
-  ).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</text>
+    message
+  )
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")}</text>
 </svg>`;
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }
 
   setupControls() {
-    const controlDiv = document.getElementById('controls');
+    const controlDiv = document.getElementById("controls");
     controlDiv.innerHTML = `
       <div>
         <button id="clearCache" class="btn">Clear Cache</button>
@@ -217,19 +221,21 @@ class WaterColorMapPlayground {
       </div>
     `;
 
-    document.getElementById('clearCache').addEventListener('click', async () => {
-      await this.cache.clear();
-      this.updateStatus('Cache cleared');
-      this.map._repaint();
-    });
+    document
+      .getElementById("clearCache")
+      .addEventListener("click", async () => {
+        await this.cache.clear();
+        this.updateStatus("Cache cleared");
+        this.map._repaint();
+      });
 
-    document.getElementById('toggleMode').addEventListener('click', () => {
+    document.getElementById("toggleMode").addEventListener("click", () => {
       const next = prompt(
-        'Backend base URL (example: http://127.0.0.1:8080).\n\nYou can also set ?backend=... in the URL.',
-        this.backendBaseUrl,
+        "Backend base URL (example: http://127.0.0.1:8080).\n\nYou can also set ?backend=... in the URL.",
+        this.backendBaseUrl
       );
       if (!next) return;
-      this.backendBaseUrl = next.replace(/\/$/, '');
+      this.backendBaseUrl = next.replace(/\/$/, "");
       this.updateStatus(`Backend set: ${this.backendBaseUrl}`);
       this.map._repaint();
     });
@@ -244,6 +250,6 @@ class WaterColorMapPlayground {
 }
 
 // Initialize on page load
-window.addEventListener('load', () => {
+window.addEventListener("load", () => {
   window.playground = new WaterColorMapPlayground();
 });
