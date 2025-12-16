@@ -7,7 +7,7 @@
 // `watercolormap:wasm-ready` event.
 
 (function () {
-  const statusEl = document.getElementById('status');
+  const statusEl = document.getElementById("status");
 
   function setStatus(msg) {
     if (statusEl) statusEl.textContent = msg;
@@ -16,7 +16,7 @@
 
   function dispatchReady() {
     globalThis.__watercolormapWasmReady = true;
-    window.dispatchEvent(new CustomEvent('watercolormap:wasm-ready'));
+    window.dispatchEvent(new CustomEvent("watercolormap:wasm-ready"));
   }
 
   async function instantiateGoWasm(url) {
@@ -26,10 +26,13 @@
     // might not; we fall back to ArrayBuffer instantiation.
     if (WebAssembly.instantiateStreaming) {
       try {
-        const result = await WebAssembly.instantiateStreaming(fetch(url), go.importObject);
+        const result = await WebAssembly.instantiateStreaming(
+          fetch(url),
+          go.importObject
+        );
         return { go, instance: result.instance };
       } catch (err) {
-        console.warn('[WASM] instantiateStreaming failed, falling back:', err);
+        console.warn("[WASM] instantiateStreaming failed, falling back:", err);
       }
     }
 
@@ -42,7 +45,10 @@
   async function waitForExports(timeoutMs = 3000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      if (typeof globalThis.watercolorInit === 'function' && typeof globalThis.watercolorGenerateTile === 'function') {
+      if (
+        typeof globalThis.watercolorInit === "function" &&
+        typeof globalThis.watercolorGenerateTile === "function"
+      ) {
         return true;
       }
       await new Promise((r) => setTimeout(r, 50));
@@ -52,34 +58,34 @@
 
   async function main() {
     try {
-      if (typeof Go === 'undefined') {
-        setStatus('Error: wasm_exec.js not loaded');
+      if (typeof Go === "undefined") {
+        setStatus("Error: wasm_exec.js not loaded");
         return;
       }
 
-      setStatus('Loading WASM runtime...');
-      const { go, instance } = await instantiateGoWasm('wasm.wasm');
+      setStatus("Loading WASM runtime...");
+      const { go, instance } = await instantiateGoWasm("wasm.wasm");
 
-      setStatus('Starting Go runtime...');
+      setStatus("Starting Go runtime...");
       // Do not await: main blocks forever (by design), but exports become available.
       go.run(instance);
 
       const ok = await waitForExports();
       if (!ok) {
-        setStatus('Error: WASM exports not ready');
+        setStatus("Error: WASM exports not ready");
         return;
       }
 
       try {
         globalThis.watercolorInit();
       } catch (err) {
-        console.warn('[WASM] watercolorInit failed:', err);
+        console.warn("[WASM] watercolorInit failed:", err);
       }
 
-      setStatus('WASM ready');
+      setStatus("WASM ready");
       dispatchReady();
     } catch (err) {
-      console.error('[WASM] Failed to bootstrap:', err);
+      console.error("[WASM] Failed to bootstrap:", err);
       setStatus(`Error: ${err && err.message ? err.message : String(err)}`);
     }
   }
