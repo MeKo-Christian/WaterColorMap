@@ -98,18 +98,19 @@
       <h3>🎨 WaterColorMap WASM</h3>
       <p>Experimental browser-based tile playground</p>
       <p>
-        Pan and zoom to request tiles. They are generated on-demand via WebAssembly
-        and cached locally.
+        Pan and zoom to request tiles. Tiles are fetched from a backend (e.g. a
+        local <code>watercolormap serve</code>) and cached locally (IndexedDB).
       </p>
       <div id="status">Initializing...</div>
       <div id="controls"></div>
       <div class="warning">
-        ⚠️ <strong>Experimental:</strong> Tile generation in the browser is very slow. This is a
-        proof-of-concept. For production use, run the hosted server.
+        ⚠️ <strong>Experimental:</strong> This playground needs a backend tile server.
+        For local use, run <code>./bin/watercolormap serve</code> and open this page.
       </div>
     </div>
 
+    <script src="wasm_exec.js"></script>
+    <script src="wasm_bootstrap.js"></script>
     <script src="wasm.js"></script>
-    <script async src="wasm.wasm.js"></script>
   </body>
 </html>
