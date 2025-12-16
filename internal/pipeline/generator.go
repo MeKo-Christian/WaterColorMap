@@ -25,6 +25,10 @@ type DataSource interface {
 	FetchTileData(context.Context, types.TileCoordinate) (*types.TileData, error)
 }
 
+type dataSourceWithBounds interface {
+	FetchTileDataWithBounds(context.Context, types.TileCoordinate, types.BoundingBox) (*types.TileData, error)
+}
+
 // Generator wires datasource, rendering, watercolor, and compositing into a single step.
 type Generator struct {
 	ds         DataSource
@@ -75,12 +79,39 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		return "", "", fmt.Errorf("failed to create output dir: %w", err)
 	}
 
-	g.log().Info("Fetching tile data", "coords", coords.String())
-	data, err := g.ds.FetchTileData(ctx, types.TileCoordinate{
+	params := watercolor.DefaultParams(g.tileSize, g.seed, g.textures)
+	padPx := watercolor.RequiredPaddingPx(params)
+	if padPx > g.tileSize {
+		padPx = g.tileSize
+	}
+
+	// Switch the pipeline to operate on a padded metatile to avoid edge artifacts
+	// from blurs/edge halos; we'll crop back to the requested tile at the end.
+	metatileSize := g.tileSize + 2*padPx
+	params.TileSize = metatileSize
+	params.OffsetX = int(coords.X)*g.tileSize - padPx
+	params.OffsetY = int(coords.Y)*g.tileSize - padPx
+
+	g.log().Info("Fetching tile data", "coords", coords.String(), "padPx", padPx)
+	tileCoord := types.TileCoordinate{
 		Zoom: int(coords.Z),
 		X:    int(coords.X),
 		Y:    int(coords.Y),
-	})
+	}
+
+	dataBounds := types.TileToBounds(tileCoord)
+	if padPx > 0 {
+		padFrac := float64(padPx) / float64(g.tileSize)
+		dataBounds = dataBounds.ExpandByFraction(padFrac)
+	}
+
+	var data *types.TileData
+	var err error
+	if dsb, ok := g.ds.(dataSourceWithBounds); ok {
+		data, err = dsb.FetchTileDataWithBounds(ctx, tileCoord, dataBounds)
+	} else {
+		data, err = g.ds.FetchTileData(ctx, tileCoord)
+	}
 	if err != nil {
 		return "", "", fmt.Errorf("failed to fetch tile data: %w", err)
 	}
@@ -98,7 +129,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	}
 
 	g.log().Info("Rendering layers", "coords", coords.String())
-	mpRenderer, err := renderer.NewMultiPassRenderer(g.stylesDir, layerDir, g.tileSize)
+	mpRenderer, err := renderer.NewMultiPassRenderer(g.stylesDir, layerDir, g.tileSize, padPx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create multipass renderer: %w", err)
 	}
@@ -108,10 +139,6 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	if err != nil {
 		return "", "", fmt.Errorf("failed to render layers: %w", err)
 	}
-
-	params := watercolor.DefaultParams(g.tileSize, g.seed, g.textures)
-	params.OffsetX = int(coords.X) * g.tileSize
-	params.OffsetY = int(coords.Y) * g.tileSize
 
 	painted := make(map[geojson.LayerType]image.Image)
 	raw := make(map[geojson.LayerType]image.Image)
@@ -140,7 +167,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	roadsImg := raw[geojson.LayerRoads]
 	highwaysImg := raw[geojson.LayerHighways]
 
-	baseBounds := image.Rect(0, 0, g.tileSize, g.tileSize)
+	baseBounds := image.Rect(0, 0, params.TileSize, params.TileSize)
 	waterMask := mask.NewEmptyMask(baseBounds)
 	roadsMask := mask.NewEmptyMask(baseBounds)
 	if waterImg != nil {
@@ -229,15 +256,22 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	}
 
 	// Paper base: fill the entire tile with a white texture so road cutouts show through.
-	base := texture.TileTexture(g.textures[geojson.LayerPaper], g.tileSize, params.OffsetX, params.OffsetY)
+	base := texture.TileTexture(g.textures[geojson.LayerPaper], params.TileSize, params.OffsetX, params.OffsetY)
 	composited, err := composite.CompositeLayersOverBase(
 		base,
 		painted,
 		[]geojson.LayerType{geojson.LayerWater, geojson.LayerLand, geojson.LayerParks, geojson.LayerCivic, geojson.LayerRoads, geojson.LayerHighways},
-		g.tileSize,
+		params.TileSize,
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to composite layers: %w", err)
+	}
+
+	// Crop back to the requested tile size.
+	final := composited
+	if padPx > 0 {
+		cropRect := image.Rect(padPx, padPx, padPx+g.tileSize, padPx+g.tileSize)
+		final = cropNRGBA(composited, cropRect)
 	}
 
 	g.log().Info("Writing final tile", "coords", coords.String(), "path", finalPath)
@@ -247,11 +281,32 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	}
 	defer outFile.Close() // nolint:errcheck
 
-	if err := png.Encode(outFile, composited); err != nil {
+	if err := png.Encode(outFile, final); err != nil {
 		return "", "", fmt.Errorf("failed to encode final tile: %w", err)
 	}
 
 	return finalPath, layerDirReturn, nil
+}
+
+func cropNRGBA(src image.Image, rect image.Rectangle) *image.NRGBA {
+	if src == nil {
+		return nil
+	}
+	if rect.Empty() {
+		return image.NewNRGBA(image.Rect(0, 0, 0, 0))
+	}
+	if !rect.In(src.Bounds()) {
+		// Best effort: intersect and return what we can.
+		rect = rect.Intersect(src.Bounds())
+	}
+
+	dst := image.NewNRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+	for y := 0; y < rect.Dy(); y++ {
+		for x := 0; x < rect.Dx(); x++ {
+			dst.Set(x, y, src.At(rect.Min.X+x, rect.Min.Y+y))
+		}
+	}
+	return dst
 }
 
 func readPNG(path string) (image.Image, error) {

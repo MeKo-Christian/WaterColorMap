@@ -113,7 +113,7 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 			t.Fatalf("failed to create render debug dir: %v", err)
 		}
 
-		mpRenderer, err := renderer.NewMultiPassRenderer(stylesDir, renderDir, tileSize)
+		mpRenderer, err := renderer.NewMultiPassRenderer(stylesDir, renderDir, tileSize, 0)
 		if err != nil {
 			t.Fatalf("failed to create multipass renderer: %v", err)
 		}

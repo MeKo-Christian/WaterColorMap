@@ -278,7 +278,7 @@ func TestMultiPassRendererCreation(t *testing.T) {
 	stylesDir := "../../assets/styles"
 	outputDir := "../../testdata/output/multipass"
 
-	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256)
+	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256, 0)
 	if err != nil {
 		t.Fatalf("Failed to create renderer: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestRenderTileWithRealData(t *testing.T) {
 	// Create renderer
 	stylesDir := "../../assets/styles"
 	outputDir := "../../testdata/output/multipass"
-	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256)
+	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256, 0)
 	if err != nil {
 		t.Fatalf("Failed to create renderer: %v", err)
 	}
@@ -379,7 +379,7 @@ func TestRenderAdjacentTilesWithRealData(t *testing.T) {
 
 	stylesDir := "../../assets/styles"
 	outputDir := "../../testdata/output/multipass"
-	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256)
+	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256, 0)
 	if err != nil {
 		t.Fatalf("Failed to create renderer: %v", err)
 	}
@@ -473,7 +473,7 @@ func TestRenderLandLayerOnly(t *testing.T) {
 	stylesDir := "../../assets/styles"
 	outputDir := "../../testdata/output/land_only"
 
-	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256)
+	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256, 0)
 	if err != nil {
 		t.Fatalf("Failed to create renderer: %v", err)
 	}

@@ -36,9 +36,13 @@ func NewOverpassDataSource(endpoint string) *OverpassDataSource {
 
 // FetchTileData fetches all OSM features for a tile
 func (ds *OverpassDataSource) FetchTileData(ctx context.Context, tile types.TileCoordinate) (*types.TileData, error) {
-	// Calculate bounding box for tile
-	bounds := types.TileToBounds(tile)
+	return ds.FetchTileDataWithBounds(ctx, tile, types.TileToBounds(tile))
+}
 
+// FetchTileDataWithBounds fetches OSM features using an explicit bounding box.
+// This is useful for "metatile" rendering where we need data slightly outside
+// the tile bounds (e.g. to support post-processing blurs without seams).
+func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile types.TileCoordinate, bounds types.BoundingBox) (*types.TileData, error) {
 	// Build Overpass QL query manually
 	query := ds.buildTileQuery(bounds)
 

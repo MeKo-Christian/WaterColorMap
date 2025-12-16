@@ -73,7 +73,7 @@ func TestRoadStrokeScalesWithZoom(t *testing.T) {
 	stylesDir := "../../assets/styles"
 	outputDir := t.TempDir()
 
-	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256)
+	renderer, err := NewMultiPassRenderer(stylesDir, outputDir, 256, 0)
 	if err != nil {
 		t.Fatalf("failed to create renderer: %v", err)
 	}

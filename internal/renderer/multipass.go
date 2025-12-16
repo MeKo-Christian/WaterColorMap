@@ -17,6 +17,8 @@ type MultiPassRenderer struct {
 	stylesDir      string
 	outputDir      string
 	tempDir        string
+	baseTileSize   int
+	padPx          int
 }
 
 // LayerRenderResult contains the result of rendering a single layer
@@ -33,17 +35,33 @@ type TileRenderResult struct {
 	TileCoords tile.Coords
 }
 
-// NewMultiPassRenderer creates a new multi-pass renderer
-func NewMultiPassRenderer(stylesDir, outputDir string, tileSize int) (*MultiPassRenderer, error) {
+// NewMultiPassRenderer creates a new multi-pass renderer.
+//
+// padPx renders a larger "metatile" (tileSize + 2*padPx) with expanded bounds.
+// This provides real pixels outside the final tile area, which is important for
+// post-processing blurs (watercolor masks, edge halos) to avoid seams.
+func NewMultiPassRenderer(stylesDir, outputDir string, tileSize int, padPx int) (*MultiPassRenderer, error) {
+	if tileSize <= 0 {
+		return nil, fmt.Errorf("tile size must be positive")
+	}
+	if padPx < 0 {
+		padPx = 0
+	}
+	renderSize := tileSize + 2*padPx
+
 	// Create Mapnik renderer (empty style file, requested tile size)
-	mapnikRenderer, err := NewMapnikRenderer("", tileSize)
+	mapnikRenderer, err := NewMapnikRenderer("", renderSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Mapnik renderer: %w", err)
 	}
 
-	// Set buffer size to ensure features near tile edges render correctly
-	// A buffer of 128 pixels (50% of tile size) ensures smooth edge alignment
-	mapnikRenderer.SetBufferSize(128)
+	// Set buffer size to ensure features near the render bounds aren't clipped.
+	// When padPx is used we keep the buffer at least as large as the pad.
+	buf := 128
+	if padPx > buf {
+		buf = padPx
+	}
+	mapnikRenderer.SetBufferSize(buf)
 
 	// Create temp directory for GeoJSON files
 	tempDir := filepath.Join(os.TempDir(), "watercolormap")
@@ -61,6 +79,8 @@ func NewMultiPassRenderer(stylesDir, outputDir string, tileSize int) (*MultiPass
 		stylesDir:      stylesDir,
 		outputDir:      outputDir,
 		tempDir:        tempDir,
+		baseTileSize:   tileSize,
+		padPx:          padPx,
 	}, nil
 }
 
@@ -86,8 +106,15 @@ func (r *MultiPassRenderer) RenderTile(coords tile.Coords, data *types.TileData)
 		geojson.LayerHighways, // Major roads/highways (yellow)
 	}
 
-	// Get bounds for the tile
+	// Get bounds for the tile and expand when rendering a metatile.
 	bounds := coords.BoundsMercator()
+	if r.padPx > 0 {
+		w := bounds[2] - bounds[0]
+		h := bounds[3] - bounds[1]
+		padX := w * float64(r.padPx) / float64(r.baseTileSize)
+		padY := h * float64(r.padPx) / float64(r.baseTileSize)
+		bounds = [4]float64{bounds[0] - padX, bounds[1] - padY, bounds[2] + padX, bounds[3] + padY}
+	}
 
 	// Render each layer
 	for _, layer := range layers {
@@ -216,17 +243,9 @@ func (r *MultiPassRenderer) renderLandLayer(
 		return result
 	}
 
-	// Render to file
+	// Render to file using the current bounds.
 	outputPath := filepath.Join(r.outputDir, fmt.Sprintf("%s_%s.png", coords.String(), geojson.LayerLand))
-
-	// Create a dummy TileCoordinate for compatibility with RenderToFile
-	dummyTile := types.TileCoordinate{
-		Zoom: int(coords.Z),
-		X:    int(coords.X),
-		Y:    int(coords.Y),
-	}
-
-	if err := r.mapnikRenderer.RenderToFile(dummyTile, outputPath); err != nil {
+	if err := r.mapnikRenderer.RenderCurrentToFile(outputPath); err != nil {
 		result.Error = fmt.Errorf("failed to render land layer: %w", err)
 		return result
 	}

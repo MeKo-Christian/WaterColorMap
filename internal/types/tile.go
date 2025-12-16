@@ -20,6 +20,43 @@ type BoundingBox struct {
 	MaxLat float64 // Northern edge (degrees)
 }
 
+// Expand returns a bounding box expanded by the given delta (in degrees).
+// Deltas may be zero; negative deltas shrink the bounds.
+func (b BoundingBox) Expand(deltaLon, deltaLat float64) BoundingBox {
+	minLon := b.MinLon - deltaLon
+	maxLon := b.MaxLon + deltaLon
+	minLat := b.MinLat - deltaLat
+	maxLat := b.MaxLat + deltaLat
+
+	// Clamp to Web Mercator supported latitude range.
+	const maxLatMerc = 85.05112878
+	if minLat < -maxLatMerc {
+		minLat = -maxLatMerc
+	}
+	if maxLat > maxLatMerc {
+		maxLat = maxLatMerc
+	}
+
+	// Clamp longitude to WGS84 range.
+	if minLon < -180 {
+		minLon = -180
+	}
+	if maxLon > 180 {
+		maxLon = 180
+	}
+
+	return BoundingBox{MinLon: minLon, MinLat: minLat, MaxLon: maxLon, MaxLat: maxLat}
+}
+
+// ExpandByFraction expands the bounds by a fraction of its width/height.
+// For example, f=0.1 expands by 10% on each side.
+func (b BoundingBox) ExpandByFraction(f float64) BoundingBox {
+	if f <= 0 {
+		return b
+	}
+	return b.Expand(b.Width()*f, b.Height()*f)
+}
+
 // TileToBounds converts tile coordinates to geographic bounding box
 func TileToBounds(coord TileCoordinate) BoundingBox {
 	n := math.Pow(2, float64(coord.Zoom))
