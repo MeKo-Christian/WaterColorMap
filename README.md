@@ -92,6 +92,24 @@ layer.getTileUrl = ({ x, y, z }) => `http://localhost:8000/tiles/z${z}_x${x}_y${
 layer.addTo(map);
 ```
 
+## Browser Playground (WASM)
+
+There is a minimal browser playground (Leaflet + IndexedDB cache) that can be deployed via GitHub Pages.
+
+- Live (GitHub Pages): https://meko-christian.github.io/WaterColorMap/wasm-playground/
+- Local (build + serve):
+
+```bash
+just build-wasm-local
+# open http://localhost:8000/wasm-playground/
+```
+
+Note: in-browser rendering is limited because Mapnik is a native dependency; for on-demand tile generation, run the backend server locally:
+
+```bash
+./bin/watercolormap serve --addr 127.0.0.1:8080
+```
+
 ## Output layout
 
 By default, tiles are written to `./tiles` as PNG files using the naming scheme:
