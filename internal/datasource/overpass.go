@@ -64,32 +64,39 @@ func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile 
 	}, nil
 }
 
-// buildTileQuery creates a comprehensive Overpass QL query for tile features
+// buildTileQuery creates a comprehensive Overpass QL query for tile features.
+// It fetches complete geometry for all ways that intersect the bounding box,
+// not just the portions within the bbox. This prevents polygon clipping artifacts
+// at tile boundaries.
 func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
-	// Build query with all feature types we need
-	// Using union operator to get multiple feature types in one query
+	// Build query with all feature types we need.
+	// IMPORTANT: We use per-element bbox filters (south,west,north,east) instead of
+	// the global [bbox:] setting. When using per-element bbox filters with "out geom",
+	// Overpass returns the COMPLETE geometry of ways that intersect the bbox,
+	// rather than clipping geometry to the bbox boundary.
+	bbox := fmt.Sprintf("%.6f,%.6f,%.6f,%.6f", bounds.MinLat, bounds.MinLon, bounds.MaxLat, bounds.MaxLon)
 	return fmt.Sprintf(`
-[out:json][timeout:30][bbox:%.6f,%.6f,%.6f,%.6f];
+[out:json][timeout:60];
 (
-  way["natural"="water"];
-  way["natural"="coastline"];
-  way["waterway"];
-  relation["natural"="water"];
-  relation["waterway"];
-  way["leisure"="park"];
-  way["leisure"="garden"];
-  way["landuse"="forest"];
-  way["landuse"="grass"];
-  way["landuse"="meadow"];
-  relation["leisure"="park"];
-  way["highway"];
-  way["building"];
-  way["amenity"="school"];
-  way["amenity"="hospital"];
-  way["amenity"="university"];
+  way["natural"="water"](%s);
+  way["natural"="coastline"](%s);
+  way["waterway"](%s);
+  relation["natural"="water"](%s);
+  relation["waterway"](%s);
+  way["leisure"="park"](%s);
+  way["leisure"="garden"](%s);
+  way["landuse"="forest"](%s);
+  way["landuse"="grass"](%s);
+  way["landuse"="meadow"](%s);
+  relation["leisure"="park"](%s);
+  way["highway"](%s);
+  way["building"](%s);
+  way["amenity"="school"](%s);
+  way["amenity"="hospital"](%s);
+  way["amenity"="university"](%s);
 );
 out geom;
-`, bounds.MinLat, bounds.MinLon, bounds.MaxLat, bounds.MaxLon)
+`, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox)
 }
 
 // extractFeatures converts Overpass result to feature collection

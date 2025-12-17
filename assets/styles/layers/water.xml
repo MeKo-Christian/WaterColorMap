@@ -6,7 +6,7 @@
 
   <Style name="water">
     <Rule>
-      <PolygonSymbolizer fill="#0000FF" />
+      <PolygonSymbolizer fill="#0000FF" clip="false" />
     </Rule>
   </Style>
 

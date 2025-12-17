@@ -87,6 +87,13 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 		t.Fatalf("failed to load textures: %v", err)
 	}
 
+	// Calculate padding early to use in data fetch and rendering.
+	// This prevents polygon clipping at tile boundaries by rendering a larger
+	// "metatile" and cropping back to the final tile size.
+	baseParams := DefaultParams(tileSize, seed, textures)
+	padPx := RequiredPaddingPx(baseParams)
+	metatileSize := tileSize + 2*padPx
+
 	ds := datasource.NewOverpassDataSource("")
 	defer ds.Close()
 
@@ -98,10 +105,17 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 			t.Fatalf("failed to create debug dir: %v", err)
 		}
 
+		// Fetch data with expanded bounds to get polygons that cross tile edges.
 		tileData, err := func() (*types.TileData, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 			defer cancel()
-			return ds.FetchTileData(ctx, types.TileCoordinate{Zoom: int(coords.Z), X: int(coords.X), Y: int(coords.Y)})
+			tileCoord := types.TileCoordinate{Zoom: int(coords.Z), X: int(coords.X), Y: int(coords.Y)}
+			dataBounds := types.TileToBounds(tileCoord)
+			if padPx > 0 {
+				padFrac := float64(padPx) / float64(tileSize)
+				dataBounds = dataBounds.ExpandByFraction(padFrac)
+			}
+			return ds.FetchTileDataWithBounds(ctx, tileCoord, dataBounds)
 		}()
 		if err != nil {
 			t.Fatalf("failed to fetch tile data for %s: %v", caseName, err)
@@ -112,7 +126,8 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 			t.Fatalf("failed to create render debug dir: %v", err)
 		}
 
-		mpRenderer, err := renderer.NewMultiPassRenderer(stylesDir, renderDir, tileSize, 0)
+		// Render metatile (larger than final tile) to avoid polygon clipping at edges.
+		mpRenderer, err := renderer.NewMultiPassRenderer(stylesDir, renderDir, tileSize, padPx)
 		if err != nil {
 			t.Fatalf("failed to create multipass renderer: %v", err)
 		}
@@ -146,11 +161,12 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 		parksImg := readLayer(geojson.LayerParks)
 		civicImg := readLayer(geojson.LayerCivic)
 
-		params := DefaultParams(tileSize, seed, textures)
-		params.OffsetX = int(coords.X) * tileSize
-		params.OffsetY = int(coords.Y) * tileSize
+		// Configure params for metatile rendering with adjusted offsets.
+		params := DefaultParams(metatileSize, seed, textures)
+		params.OffsetX = int(coords.X)*tileSize - padPx
+		params.OffsetY = int(coords.Y)*tileSize - padPx
 
-		baseBounds := image.Rect(0, 0, tileSize, tileSize)
+		baseBounds := image.Rect(0, 0, metatileSize, metatileSize)
 		waterAlpha := mask.NewEmptyMask(baseBounds)
 		roadsAlpha := mask.NewEmptyMask(baseBounds)
 		highwaysAlpha := mask.NewEmptyMask(baseBounds)
@@ -175,7 +191,7 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 
 		nonLandBase := mask.MaxMask(waterAlpha, roadsAlpha)
 		blur1 := mask.GaussianBlur(nonLandBase, params.BlurSigma)
-		noise := mask.GeneratePerlinNoiseWithOffset(tileSize, tileSize, params.NoiseScale, params.Seed, params.OffsetX, params.OffsetY)
+		noise := mask.GeneratePerlinNoiseWithOffset(metatileSize, metatileSize, params.NoiseScale, params.Seed, params.OffsetX, params.OffsetY)
 		noisy := blur1
 		if params.NoiseStrength != 0 {
 			noisy = mask.ApplyNoiseToMask(blur1, noise, params.NoiseStrength)
@@ -211,7 +227,7 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 			t.Fatalf("PaintLayerFromMask(civic) failed (%s): %v", caseName, err)
 		}
 
-		base := texture.TileTexture(textures[geojson.LayerPaper], tileSize, params.OffsetX, params.OffsetY)
+		base := texture.TileTexture(textures[geojson.LayerPaper], metatileSize, params.OffsetX, params.OffsetY)
 		combined, err := composite.CompositeLayersOverBase(
 			base,
 			map[geojson.LayerType]image.Image{
@@ -222,36 +238,45 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 				geojson.LayerHighways: paintedHighways,
 			},
 			[]geojson.LayerType{geojson.LayerWater, geojson.LayerLand, geojson.LayerParks, geojson.LayerCivic, geojson.LayerHighways},
-			tileSize,
+			metatileSize,
 		)
 		if err != nil {
 			t.Fatalf("CompositeLayers failed (%s): %v", caseName, err)
 		}
 
+		// Crop all stages back to final tile size (remove padding).
+		cropRect := image.Rect(padPx, padPx, padPx+tileSize, padPx+tileSize)
+		crop := func(img image.Image) image.Image {
+			if img == nil {
+				return nil
+			}
+			return cropImage(img, cropRect)
+		}
+
 		stages := map[string]image.Image{
-			"00_rendered_water.png":    waterImg,
-			"00_rendered_roads.png":    roadsImg,
-			"00_rendered_highways.png": highwaysImg,
-			"00_rendered_parks.png":    parksImg,
-			"00_rendered_civic.png":    civicImg,
-			"01_water_alpha.png":       waterAlpha,
-			"02_roads_alpha.png":       roadsAlpha,
-			"03_highways_alpha.png":    highwaysAlpha,
-			"04_nonland_union.png":     nonLandBase,
-			"04_blur.png":              blur1,
-			"05_noise.png":             noise,
-			"06_noisy.png":             noisy,
-			"07_threshold.png":         thresholded,
-			"08_antialias.png":         aa,
-			"09_land_inverted.png":     landMask,
-			"10_parks_on_land.png":     parksOnLand,
-			"11_civic_on_land.png":     civicOnLand,
-			"12_painted_water.png":     paintedWater,
-			"13_painted_land.png":      paintedLand,
-			"14_painted_parks.png":     paintedParks,
-			"15_painted_civic.png":     paintedCivic,
-			"16_painted_highways.png":  paintedHighways,
-			"17_combined.png":          combined,
+			"00_rendered_water.png":    crop(waterImg),
+			"00_rendered_roads.png":    crop(roadsImg),
+			"00_rendered_highways.png": crop(highwaysImg),
+			"00_rendered_parks.png":    crop(parksImg),
+			"00_rendered_civic.png":    crop(civicImg),
+			"01_water_alpha.png":       crop(waterAlpha),
+			"02_roads_alpha.png":       crop(roadsAlpha),
+			"03_highways_alpha.png":    crop(highwaysAlpha),
+			"04_nonland_union.png":     crop(nonLandBase),
+			"04_blur.png":              crop(blur1),
+			"05_noise.png":             crop(noise),
+			"06_noisy.png":             crop(noisy),
+			"07_threshold.png":         crop(thresholded),
+			"08_antialias.png":         crop(aa),
+			"09_land_inverted.png":     crop(landMask),
+			"10_parks_on_land.png":     crop(parksOnLand),
+			"11_civic_on_land.png":     crop(civicOnLand),
+			"12_painted_water.png":     crop(paintedWater),
+			"13_painted_land.png":      crop(paintedLand),
+			"14_painted_parks.png":     crop(paintedParks),
+			"15_painted_civic.png":     crop(paintedCivic),
+			"16_painted_highways.png":  crop(paintedHighways),
+			"17_combined.png":          crop(combined),
 		}
 
 		keys := make([]string, 0, len(stages))
@@ -324,4 +349,25 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 			}
 		}
 	}
+}
+
+// cropImage crops an image to the specified rectangle.
+func cropImage(src image.Image, rect image.Rectangle) image.Image {
+	if src == nil {
+		return nil
+	}
+	if rect.Empty() {
+		return image.NewNRGBA(image.Rect(0, 0, 0, 0))
+	}
+	if !rect.In(src.Bounds()) {
+		rect = rect.Intersect(src.Bounds())
+	}
+
+	dst := image.NewNRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
+	for y := 0; y < rect.Dy(); y++ {
+		for x := 0; x < rect.Dx(); x++ {
+			dst.Set(x, y, src.At(rect.Min.X+x, rect.Min.Y+y))
+		}
+	}
+	return dst
 }

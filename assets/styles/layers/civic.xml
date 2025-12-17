@@ -7,7 +7,7 @@
   <Style name="civic">
     <Rule>
       <!-- Buildings and civic structures -->
-      <PolygonSymbolizer fill="#C080C0" />
+      <PolygonSymbolizer fill="#C080C0" clip="false" />
     </Rule>
   </Style>
 

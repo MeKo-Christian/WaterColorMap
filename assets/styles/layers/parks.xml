@@ -7,7 +7,7 @@
   <Style name="parks">
     <Rule>
       <!-- Parks, gardens, forests, grass, woods -->
-      <PolygonSymbolizer fill="#00FF00" />
+      <PolygonSymbolizer fill="#00FF00" clip="false" />
     </Rule>
   </Style>
 

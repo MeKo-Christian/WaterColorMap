@@ -32,7 +32,9 @@ func TestRequiredPaddingPx(t *testing.T) {
 		s.EdgeOuterSigma = 0
 		params.Styles[k] = s
 	}
-	if got := RequiredPaddingPx(params); got != 0 {
-		t.Fatalf("expected pad 0 when all sigmas are 0, got %d", got)
+	// Even with all sigmas at 0, we need MinGeometryPaddingPx to handle
+	// polygon geometry that extends beyond tile boundaries.
+	if got := RequiredPaddingPx(params); got != MinGeometryPaddingPx {
+		t.Fatalf("expected pad %d (MinGeometryPaddingPx) when all sigmas are 0, got %d", MinGeometryPaddingPx, got)
 	}
 }
