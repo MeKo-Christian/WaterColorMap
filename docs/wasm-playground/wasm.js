@@ -126,8 +126,19 @@ class WaterColorMapPlayground {
   getInitialBackendBaseUrl() {
     const params = new URLSearchParams(window.location.search);
     const fromQuery = params.get("backend");
-    // Default to localhost for local development.
-    return (fromQuery || "http://127.0.0.1:8080").replace(/\/$/, "");
+
+    if (fromQuery) {
+      return fromQuery.replace(/\/$/, "");
+    }
+
+    // If this page is served over HTTPS (e.g. GitHub Pages), default to same-origin
+    // to avoid HTTPS -> HTTP mixed-content blocking.
+    if (window.location.protocol === "https:") {
+      return window.location.origin;
+    }
+
+    // Default to localhost for local development (HTTP).
+    return "http://127.0.0.1:8080";
   }
 
   async init() {
