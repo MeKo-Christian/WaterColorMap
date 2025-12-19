@@ -68,7 +68,10 @@
       }
 
       setStatus("Loading WASM runtime...");
-      const { go, instance } = await instantiateGoWasm("wasm.wasm");
+      // Cache-bust the WASM binary so GitHub Pages/CDN caches don't serve an older build.
+      const wasmUrl = new URL("wasm.wasm", window.location.href);
+      wasmUrl.searchParams.set("v", String(Date.now()));
+      const { go, instance } = await instantiateGoWasm(wasmUrl.toString());
 
       setStatus("Starting Go runtime...");
       // Do not await: main blocks forever (by design), but exports become available.
