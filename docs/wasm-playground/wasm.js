@@ -52,7 +52,11 @@ class WaterColorMapPlayground {
     this.tileLayer = null;
     this.statusEl = document.getElementById("status");
     this.maxConcurrency = getMaxConcurrency();
-    this.fetchSemaphore = new Semaphore(this.maxConcurrency);
+    // We use two semaphores: 
+    // 1. overpassSemaphore: Strict limit for API calls (Overpass is very sensitive)
+    // 2. renderSemaphore: Limit for CPU-intensive WASM rendering
+    this.overpassSemaphore = new Semaphore(2); 
+    this.renderSemaphore = new Semaphore(this.maxConcurrency);
     this.overpassEndpoint = "https://overpass-api.de/api/interpreter";
     this.init();
   }
@@ -72,7 +76,7 @@ class WaterColorMapPlayground {
     this.tileLayer.addTo(this.map);
 
     this.updateStatus(
-      `Ready. In-browser rendering via Overpass (${this.maxConcurrency} CPUs)`
+      `Ready. In-browser rendering via Overpass (API limit: 2, Render limit: ${this.maxConcurrency})`
     );
   }
 
@@ -113,16 +117,44 @@ class WaterColorMapPlayground {
     });
   }
 
-  async fetchOverpassJSON(query) {
-    const resp = await fetch(this.overpassEndpoint, {
-      method: "POST",
-      mode: "cors",
-      body: query,
-    });
-    if (!resp.ok) {
-      throw new Error(`Overpass HTTP ${resp.status}`);
+  async fetchOverpassJSON(query, maxRetries = 5) {
+    let retryCount = 0;
+    while (true) {
+      try {
+        const resp = await fetch(this.overpassEndpoint, {
+          method: "POST",
+          mode: "cors",
+          body: query,
+        });
+
+        // 429 Too Many Requests or 5xx Server Errors
+        if (resp.status === 429 || resp.status >= 500) {
+          if (retryCount < maxRetries) {
+            retryCount++;
+            // Exponential backoff: 2s, 4s, 8s, 16s, 32s + jitter
+            const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+            this.updateStatus(`Overpass busy (${resp.status}), retrying in ${Math.round(delay)}ms... (attempt ${retryCount}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+        }
+
+        if (!resp.ok) {
+          throw new Error(`Overpass HTTP ${resp.status}`);
+        }
+        return await resp.text();
+      } catch (err) {
+        // Network errors (like timeout or connection reset)
+        if (retryCount < maxRetries) {
+          retryCount++;
+          const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
+          this.updateStatus(`Overpass connection error, retrying in ${Math.round(delay)}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        throw err;
+      }
     }
-    return await resp.text();
   }
 
   async loadTileToImg({ z, x, y, is2x, img }) {
@@ -137,46 +169,50 @@ class WaterColorMapPlayground {
       return;
     }
 
-    // Fetch from backend with concurrency limit
-    await this.fetchSemaphore.acquire();
+    const req = { zoom: z, x, y, hidpi: is2x };
+    const q = watercolorOverpassQueryForTile(JSON.stringify(req));
+    if (!q || !q.query) {
+      img.src = this.makePlaceholderDataUrl("Query error");
+      return;
+    }
+
+    let overpassJSON = null;
+
+    // Phase 1: Fetch from Overpass (limited concurrency)
+    await this.overpassSemaphore.acquire();
     try {
-      try {
-        const req = { zoom: z, x, y, hidpi: is2x };
-        const q = watercolorOverpassQueryForTile(JSON.stringify(req));
-        if (!q || !q.query) {
-          throw new Error(q && q.error ? q.error : "query build failed");
-        }
-
-        this.updateStatus(
-          `Overpass z${z} ${x}/${y}... (${this.maxConcurrency} concurrent)`
-        );
-
-        const overpassJSON = await this.fetchOverpassJSON(q.query);
-        const rendered = watercolorRenderTileFromOverpassJSON(
-          JSON.stringify(req),
-          overpassJSON
-        );
-        if (!rendered || !rendered.pngBase64) {
-          throw new Error(
-            rendered && rendered.error ? rendered.error : "render failed"
-          );
-        }
-
-        img.src = `data:${rendered.mime || "image/png"};base64,${
-          rendered.pngBase64
-        }`;
-        if (typeof rendered.ms === "number") {
-          this.updateStatus(
-            `Rendered z${z} ${x}/${y} in ${rendered.ms}ms (${this.maxConcurrency} concurrent)`
-          );
-        }
-      } catch (err) {
-        img.src = this.makePlaceholderDataUrl("Render error");
-        this.updateStatus(String(err && err.message ? err.message : err));
-        return;
-      }
+      this.updateStatus(`Fetching z${z} ${x}/${y} from Overpass...`);
+      overpassJSON = await this.fetchOverpassJSON(q.query);
+    } catch (err) {
+      img.src = this.makePlaceholderDataUrl("Overpass error");
+      this.updateStatus(`Overpass error: ${err.message}`);
+      return;
     } finally {
-      this.fetchSemaphore.release();
+      this.overpassSemaphore.release();
+    }
+
+    // Phase 2: Render in WASM (CPU concurrency)
+    await this.renderSemaphore.acquire();
+    try {
+      this.updateStatus(`Rendering z${z} ${x}/${y}...`);
+      const rendered = watercolorRenderTileFromOverpassJSON(
+        JSON.stringify(req),
+        overpassJSON
+      );
+      
+      if (!rendered || !rendered.pngBase64) {
+        throw new Error(rendered && rendered.error ? rendered.error : "render failed");
+      }
+
+      img.src = `data:${rendered.mime || "image/png"};base64,${rendered.pngBase64}`;
+      if (typeof rendered.ms === "number") {
+        this.updateStatus(`Rendered z${z} ${x}/${y} in ${rendered.ms}ms`);
+      }
+    } catch (err) {
+      img.src = this.makePlaceholderDataUrl("Render error");
+      this.updateStatus(`Render error: ${err.message}`);
+    } finally {
+      this.renderSemaphore.release();
     }
   }
 
