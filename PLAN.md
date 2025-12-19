@@ -263,12 +263,13 @@ Then each layer gets:
 
 ### 5.2 Parallel Tile Rendering
 
-- [ ] Implement worker pool for tile generation
-- [ ] Add goroutine-based parallel processing
-- [ ] Implement database connection pooling
-- [ ] Add progress tracking and logging
-- [ ] Test parallel rendering performance
-- [ ] Optimize worker count
+- [x] Implement worker pool for tile generation (`internal/worker/pool.go`)
+- [x] Add goroutine-based parallel processing (configurable worker count, defaults to NumCPU)
+- [x] Implement database connection pooling (N/A - Overpass API, generators are per-worker)
+- [x] Add progress tracking and logging (`internal/worker/progress.go`)
+- [x] Test parallel rendering performance (unit tests in `internal/worker/pool_test.go`)
+- [x] Optimize worker count (defaults to `runtime.NumCPU()`)
+- [x] Add batch CLI command (`--bbox`, `--zoom-min`, `--zoom-max`, `--workers`, `--progress`)
 
 ### 5.3 Multi-Zoom Generation
 

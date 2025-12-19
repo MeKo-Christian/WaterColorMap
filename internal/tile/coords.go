@@ -143,6 +143,8 @@ func (r TileRange) Count() int {
 
 // TileRangeFromBounds creates a TileRange covering a geographic bounding box
 // bounds: [minLon, minLat, maxLon, maxLat] in WGS84
+// NOTE: This function is deprecated for multi-zoom ranges. Use TilesInBBox instead,
+// as this function calculates X/Y only at minZ and applies it to all zoom levels.
 func TileRangeFromBounds(minZ, maxZ uint32, bounds [4]float64) TileRange {
 	minLon, minLat, maxLon, maxLat := bounds[0], bounds[1], bounds[2], bounds[3]
 
@@ -173,4 +175,78 @@ func TileRangeFromBounds(minZ, maxZ uint32, bounds [4]float64) TileRange {
 		MinY: minY,
 		MaxY: maxY,
 	}
+}
+
+// TilesInBBox returns all tile coordinates within a bounding box across a zoom range.
+// bbox: [minLon, minLat, maxLon, maxLat] in WGS84
+// Calculates correct tile coordinates at each zoom level independently.
+func TilesInBBox(bbox [4]float64, zoomMin, zoomMax int) []Coords {
+	minLon, minLat, maxLon, maxLat := bbox[0], bbox[1], bbox[2], bbox[3]
+
+	// Pre-allocate with estimated capacity
+	estimatedCount := TileCount(bbox, zoomMin, zoomMax)
+	tiles := make([]Coords, 0, estimatedCount)
+
+	minPoint := orb.Point{minLon, minLat}
+	maxPoint := orb.Point{maxLon, maxLat}
+
+	for z := zoomMin; z <= zoomMax; z++ {
+		zoom := maptile.Zoom(z)
+
+		// Get tile coordinates at this zoom level
+		minTile := maptile.At(minPoint, zoom)
+		maxTile := maptile.At(maxPoint, zoom)
+
+		// Ensure min/max are correctly ordered (Y is inverted in TMS)
+		minX, maxX := minTile.X, maxTile.X
+		if minX > maxX {
+			minX, maxX = maxX, minX
+		}
+
+		minY, maxY := minTile.Y, maxTile.Y
+		if minY > maxY {
+			minY, maxY = maxY, minY
+		}
+
+		// Generate all tiles at this zoom level
+		for x := minX; x <= maxX; x++ {
+			for y := minY; y <= maxY; y++ {
+				tiles = append(tiles, NewCoords(uint32(z), x, y))
+			}
+		}
+	}
+
+	return tiles
+}
+
+// TileCount returns the number of tiles in a bounding box across a zoom range.
+// This is useful for progress estimation without allocating the full tile list.
+func TileCount(bbox [4]float64, zoomMin, zoomMax int) int {
+	minLon, minLat, maxLon, maxLat := bbox[0], bbox[1], bbox[2], bbox[3]
+	minPoint := orb.Point{minLon, minLat}
+	maxPoint := orb.Point{maxLon, maxLat}
+
+	count := 0
+	for z := zoomMin; z <= zoomMax; z++ {
+		zoom := maptile.Zoom(z)
+
+		minTile := maptile.At(minPoint, zoom)
+		maxTile := maptile.At(maxPoint, zoom)
+
+		minX, maxX := minTile.X, maxTile.X
+		if minX > maxX {
+			minX, maxX = maxX, minX
+		}
+
+		minY, maxY := minTile.Y, maxTile.Y
+		if minY > maxY {
+			minY, maxY = maxY, minY
+		}
+
+		xCount := int(maxX - minX + 1)
+		yCount := int(maxY - minY + 1)
+		count += xCount * yCount
+	}
+
+	return count
 }

@@ -228,3 +228,83 @@ func TestTileRangeFromBounds(t *testing.T) {
 		t.Errorf("Invalid tile range: x[%d-%d] y[%d-%d]", tr.MinX, tr.MaxX, tr.MinY, tr.MaxY)
 	}
 }
+
+func TestTilesInBBox(t *testing.T) {
+	// Hanover area bbox (small area for testing)
+	bbox := [4]float64{9.7, 52.3, 9.8, 52.4} // minLon, minLat, maxLon, maxLat
+
+	t.Run("single zoom level", func(t *testing.T) {
+		tiles := TilesInBBox(bbox, 13, 13)
+		if len(tiles) == 0 {
+			t.Fatal("Expected at least one tile")
+		}
+		// All tiles should be at zoom 13
+		for _, tile := range tiles {
+			if tile.Z != 13 {
+				t.Errorf("Expected zoom 13, got %d", tile.Z)
+			}
+		}
+		t.Logf("Zoom 13: %d tiles", len(tiles))
+	})
+
+	t.Run("multiple zoom levels have correct counts", func(t *testing.T) {
+		// At each higher zoom level, there should be roughly 4x more tiles
+		tilesZ10 := TilesInBBox(bbox, 10, 10)
+		tilesZ11 := TilesInBBox(bbox, 11, 11)
+		tilesZ12 := TilesInBBox(bbox, 12, 12)
+
+		t.Logf("Z10: %d tiles, Z11: %d tiles, Z12: %d tiles",
+			len(tilesZ10), len(tilesZ11), len(tilesZ12))
+
+		// At higher zoom, count should increase (not necessarily 4x due to bbox edge effects)
+		if len(tilesZ11) < len(tilesZ10) {
+			t.Errorf("Z11 should have >= tiles than Z10: %d < %d", len(tilesZ11), len(tilesZ10))
+		}
+		if len(tilesZ12) < len(tilesZ11) {
+			t.Errorf("Z12 should have >= tiles than Z11: %d < %d", len(tilesZ12), len(tilesZ11))
+		}
+	})
+
+	t.Run("combined zoom range", func(t *testing.T) {
+		tiles := TilesInBBox(bbox, 10, 12)
+
+		// Count tiles per zoom level
+		zoomCounts := make(map[uint32]int)
+		for _, tile := range tiles {
+			zoomCounts[tile.Z]++
+		}
+
+		t.Logf("Total: %d tiles across zooms %v", len(tiles), zoomCounts)
+
+		// Should have tiles at all requested zoom levels
+		for z := uint32(10); z <= 12; z++ {
+			if zoomCounts[z] == 0 {
+				t.Errorf("Expected tiles at zoom %d, got none", z)
+			}
+		}
+	})
+
+	t.Run("tiles are unique", func(t *testing.T) {
+		tiles := TilesInBBox(bbox, 10, 12)
+		seen := make(map[string]bool)
+		for _, tile := range tiles {
+			key := tile.String()
+			if seen[key] {
+				t.Errorf("Duplicate tile: %s", key)
+			}
+			seen[key] = true
+		}
+	})
+}
+
+func TestTileCount(t *testing.T) {
+	bbox := [4]float64{9.7, 52.3, 9.8, 52.4}
+
+	// Count should match actual tiles returned
+	tiles := TilesInBBox(bbox, 10, 12)
+	count := TileCount(bbox, 10, 12)
+
+	if count != len(tiles) {
+		t.Errorf("TileCount() = %d, but TilesInBBox returned %d tiles", count, len(tiles))
+	}
+}

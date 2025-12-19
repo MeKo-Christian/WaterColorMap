@@ -3,11 +3,18 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
 
 	"github.com/MeKo-Tech/watercolormap/internal/datasource"
 	"github.com/MeKo-Tech/watercolormap/internal/pipeline"
 	"github.com/MeKo-Tech/watercolormap/internal/tile"
+	"github.com/MeKo-Tech/watercolormap/internal/worker"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -22,9 +29,19 @@ var generateCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(generateCmd)
 
-	generateCmd.Flags().IntP("zoom", "z", 13, "Zoom level")
-	generateCmd.Flags().IntP("x", "x", 0, "X tile coordinate")
-	generateCmd.Flags().IntP("y", "y", 0, "Y tile coordinate")
+	// Single tile flags
+	generateCmd.Flags().IntP("zoom", "z", 13, "Zoom level (for single tile mode)")
+	generateCmd.Flags().IntP("x", "x", 0, "X tile coordinate (for single tile mode)")
+	generateCmd.Flags().IntP("y", "y", 0, "Y tile coordinate (for single tile mode)")
+
+	// Batch generation flags
+	generateCmd.Flags().String("bbox", "", "Bounding box: minLon,minLat,maxLon,maxLat (e.g., \"9.7,52.3,9.9,52.4\")")
+	generateCmd.Flags().Int("zoom-min", 0, "Minimum zoom level for batch generation")
+	generateCmd.Flags().Int("zoom-max", 0, "Maximum zoom level for batch generation")
+	generateCmd.Flags().IntP("workers", "w", 0, "Number of parallel workers (default: number of CPUs)")
+	generateCmd.Flags().Bool("progress", true, "Show progress bar during batch generation")
+
+	// Common flags
 	generateCmd.Flags().Bool("force", false, "Force regeneration even if tile exists")
 	generateCmd.Flags().Int("tile-size", 256, "Tile size in pixels (typically 256 or 512 for Hi-DPI)")
 	generateCmd.Flags().Bool("hidpi", false, "Also generate a 2x (@2x) tile alongside the base tile")
@@ -32,39 +49,43 @@ func init() {
 	generateCmd.Flags().Int64("seed", 1337, "Deterministic seed for noise/texture alignment")
 	generateCmd.Flags().Bool("keep-layers", false, "Keep intermediate rendered layer PNGs for debugging")
 
-	if err := viper.BindPFlag("generate.zoom", generateCmd.Flags().Lookup("zoom")); err != nil {
-		panic(fmt.Sprintf("failed to bind flag: %v", err))
+	bindFlags := []struct {
+		key  string
+		flag string
+	}{
+		{"generate.zoom", "zoom"},
+		{"generate.x", "x"},
+		{"generate.y", "y"},
+		{"generate.bbox", "bbox"},
+		{"generate.zoom_min", "zoom-min"},
+		{"generate.zoom_max", "zoom-max"},
+		{"generate.workers", "workers"},
+		{"generate.progress", "progress"},
+		{"generate.force", "force"},
+		{"generate.tile_size", "tile-size"},
+		{"generate.hidpi", "hidpi"},
+		{"generate.png_compression", "png-compression"},
+		{"generate.seed", "seed"},
+		{"generate.keep_layers", "keep-layers"},
 	}
-	if err := viper.BindPFlag("generate.x", generateCmd.Flags().Lookup("x")); err != nil {
-		panic(fmt.Sprintf("failed to bind flag: %v", err))
-	}
-	if err := viper.BindPFlag("generate.y", generateCmd.Flags().Lookup("y")); err != nil {
-		panic(fmt.Sprintf("failed to bind flag: %v", err))
-	}
-	if err := viper.BindPFlag("generate.force", generateCmd.Flags().Lookup("force")); err != nil {
-		panic(fmt.Sprintf("failed to bind flag: %v", err))
-	}
-	if err := viper.BindPFlag("generate.tile_size", generateCmd.Flags().Lookup("tile-size")); err != nil {
-		panic(fmt.Sprintf("failed to bind flag: %v", err))
-	}
-	if err := viper.BindPFlag("generate.hidpi", generateCmd.Flags().Lookup("hidpi")); err != nil {
-		panic(fmt.Sprintf("failed to bind flag: %v", err))
-	}
-	if err := viper.BindPFlag("generate.png_compression", generateCmd.Flags().Lookup("png-compression")); err != nil {
-		panic(fmt.Sprintf("failed to bind flag: %v", err))
-	}
-	if err := viper.BindPFlag("generate.seed", generateCmd.Flags().Lookup("seed")); err != nil {
-		panic(fmt.Sprintf("failed to bind flag: %v", err))
-	}
-	if err := viper.BindPFlag("generate.keep_layers", generateCmd.Flags().Lookup("keep-layers")); err != nil {
-		panic(fmt.Sprintf("failed to bind flag: %v", err))
+
+	for _, bf := range bindFlags {
+		if err := viper.BindPFlag(bf.key, generateCmd.Flags().Lookup(bf.flag)); err != nil {
+			panic(fmt.Sprintf("failed to bind flag %s: %v", bf.flag, err))
+		}
 	}
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
+	// Read all config values
 	zoom := viper.GetInt("generate.zoom")
 	x := viper.GetInt("generate.x")
 	y := viper.GetInt("generate.y")
+	bbox := viper.GetString("generate.bbox")
+	zoomMin := viper.GetInt("generate.zoom_min")
+	zoomMax := viper.GetInt("generate.zoom_max")
+	workers := viper.GetInt("generate.workers")
+	showProgress := viper.GetBool("generate.progress")
 	force := viper.GetBool("generate.force")
 	outputDir := viper.GetString("output-dir")
 	dataSourceName := viper.GetString("data-source")
@@ -78,6 +99,15 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		initLogging()
 	}
 
+	// Determine mode: batch (bbox provided) or single tile
+	if bbox != "" {
+		return runBatchGenerate(bbox, zoomMin, zoomMax, workers, showProgress, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers)
+	}
+
+	return runSingleGenerate(zoom, x, y, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers)
+}
+
+func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool) error {
 	coords := tile.NewCoords(uint32(zoom), uint32(x), uint32(y))
 
 	logger.Info("Starting tile generation",
@@ -140,4 +170,150 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgress, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool) error {
+	// Parse bounding box
+	bbox, err := parseBBox(bboxStr)
+	if err != nil {
+		return fmt.Errorf("invalid bbox: %w", err)
+	}
+
+	// Validate zoom range
+	if zoomMin <= 0 || zoomMax <= 0 {
+		return fmt.Errorf("--zoom-min and --zoom-max are required for batch generation")
+	}
+	if zoomMin > zoomMax {
+		return fmt.Errorf("--zoom-min (%d) must be <= --zoom-max (%d)", zoomMin, zoomMax)
+	}
+
+	// Default workers to CPU count
+	if workers <= 0 {
+		workers = runtime.NumCPU()
+	}
+
+	// Calculate tiles
+	tiles := tile.TilesInBBox(bbox, zoomMin, zoomMax)
+	totalTiles := len(tiles)
+
+	// If hidpi, we'll generate 2x the tiles
+	if hidpi {
+		totalTiles *= 2
+	}
+
+	logger.Info("Starting batch tile generation",
+		"bbox", bboxStr,
+		"zoom_range", fmt.Sprintf("%d-%d", zoomMin, zoomMax),
+		"tiles", len(tiles),
+		"total_with_hidpi", totalTiles,
+		"workers", workers,
+		"output_dir", outputDir,
+	)
+
+	// Setup data source
+	var ds pipeline.DataSource
+	switch dataSourceName {
+	case "overpass":
+		ds = datasource.NewOverpassDataSource("")
+	default:
+		return fmt.Errorf("unsupported data source: %s", dataSourceName)
+	}
+
+	stylesDir := filepath.Join("assets", "styles")
+	texturesDir := filepath.Join("assets", "textures")
+
+	// Create generator
+	gen, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize, seed, keepLayers, logger, pipeline.GeneratorOptions{
+		PNGCompression: pngCompression,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to init generator: %w", err)
+	}
+
+	// Setup context with signal handling
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		logger.Info("Received interrupt signal, cancelling...")
+		cancel()
+	}()
+
+	// Build task list
+	tasks := make([]worker.Task, 0, totalTiles)
+	for _, coords := range tiles {
+		tasks = append(tasks, worker.Task{
+			Coords: coords,
+			Force:  force,
+			Suffix: "",
+		})
+		if hidpi {
+			tasks = append(tasks, worker.Task{
+				Coords: coords,
+				Force:  force,
+				Suffix: "@2x",
+			})
+		}
+	}
+
+	// Setup progress tracking
+	progress := worker.NewProgress(len(tasks), showProgress)
+
+	// Create worker pool
+	pool := worker.New(worker.Config{
+		Workers:    workers,
+		Generator:  gen,
+		OnProgress: progress.Callback(),
+	})
+
+	// Run
+	results := pool.Run(ctx, tasks)
+	progress.Done()
+
+	// Summary
+	var failedCount int
+	for _, r := range results {
+		if r.Err != nil {
+			failedCount++
+			logger.Error("Tile generation failed", "coords", r.Task.Coords.String(), "suffix", r.Task.Suffix, "error", r.Err)
+		}
+	}
+
+	logger.Info(progress.Summary())
+
+	if failedCount > 0 {
+		return fmt.Errorf("%d tiles failed to generate", failedCount)
+	}
+
+	return nil
+}
+
+// parseBBox parses a bounding box string "minLon,minLat,maxLon,maxLat" into [4]float64.
+func parseBBox(s string) ([4]float64, error) {
+	parts := strings.Split(s, ",")
+	if len(parts) != 4 {
+		return [4]float64{}, fmt.Errorf("expected 4 comma-separated values, got %d", len(parts))
+	}
+
+	var bbox [4]float64
+	for i, part := range parts {
+		val, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+		if err != nil {
+			return [4]float64{}, fmt.Errorf("invalid number at position %d: %w", i, err)
+		}
+		bbox[i] = val
+	}
+
+	// Validate
+	if bbox[0] >= bbox[2] {
+		return [4]float64{}, fmt.Errorf("minLon (%.4f) must be < maxLon (%.4f)", bbox[0], bbox[2])
+	}
+	if bbox[1] >= bbox[3] {
+		return [4]float64{}, fmt.Errorf("minLat (%.4f) must be < maxLat (%.4f)", bbox[1], bbox[3])
+	}
+
+	return bbox, nil
 }
