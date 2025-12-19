@@ -65,9 +65,11 @@ func generateTile(this js.Value, args []js.Value) interface{} {
 	}
 
 	key := fmt.Sprintf("z%d_x%d_y%d%s", req.Zoom, req.X, req.Y, suffix)
-	return GenerateTileResponse{
-		Key:      key,
-		Filename: key + ".png",
+	// syscall/js.ValueOf cannot convert arbitrary Go structs.
+	// Return a JS-convertible object instead.
+	return map[string]string{
+		"key":      key,
+		"filename": key + ".png",
 	}
 }
 

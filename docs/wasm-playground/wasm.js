@@ -147,13 +147,13 @@ class WaterColorMapPlayground {
     // Add controls
     this.setupControls();
     this.updateStatus(
-      `Ready. Backend: ${this.backendBaseUrl} (${this.maxConcurrency} CPUs)`,
+      `Ready. Backend: ${this.backendBaseUrl} (${this.maxConcurrency} CPUs)`
     );
   }
 
   createGridLayer() {
     const self = this;
-    return L.GridLayer.extend({
+    const WaterColorGridLayer = L.GridLayer.extend({
       createTile(coords, done) {
         const img = document.createElement("img");
         img.alt = "";
@@ -175,7 +175,9 @@ class WaterColorMapPlayground {
 
         return img;
       },
-    })({
+    });
+
+    return new WaterColorGridLayer({
       attribution: "© OpenStreetMap contributors | WaterColorMap Playground",
       tileSize: 256,
       maxZoom: 16,
@@ -222,7 +224,7 @@ class WaterColorMapPlayground {
     try {
       const url = this.makeTileUrl(z, x, y, is2x);
       this.updateStatus(
-        `Fetching z${z} ${x}/${y}... (${this.maxConcurrency} concurrent)`,
+        `Fetching z${z} ${x}/${y}... (${this.maxConcurrency} concurrent)`
       );
 
       let resp;
@@ -257,7 +259,7 @@ class WaterColorMapPlayground {
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
   <rect width="100%" height="100%" fill="#f5f5f5"/>
   <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#777">${String(
-    message,
+    message
   )
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -290,7 +292,7 @@ class WaterColorMapPlayground {
     document.getElementById("toggleMode").addEventListener("click", () => {
       const next = prompt(
         "Backend base URL (example: http://127.0.0.1:8080).\n\nYou can also set ?backend=... in the URL.",
-        this.backendBaseUrl,
+        this.backendBaseUrl
       );
       if (!next) return;
       this.backendBaseUrl = next.replace(/\/$/, "");
