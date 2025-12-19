@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/MeKo-Tech/watercolormap/internal/datasource"
+	"github.com/MeKo-Tech/watercolormap/internal/mbtiles"
 	"github.com/MeKo-Tech/watercolormap/internal/pipeline"
 	"github.com/MeKo-Tech/watercolormap/internal/tile"
 	"github.com/MeKo-Tech/watercolormap/internal/worker"
@@ -49,6 +50,10 @@ func init() {
 	generateCmd.Flags().Int64("seed", 1337, "Deterministic seed for noise/texture alignment")
 	generateCmd.Flags().Bool("keep-layers", false, "Keep intermediate rendered layer PNGs for debugging")
 
+	// Output format flags
+	generateCmd.Flags().String("format", "folder", "Output format: folder or mbtiles")
+	generateCmd.Flags().String("output-file", "", "Output file path for MBTiles format (e.g., tiles.mbtiles)")
+
 	bindFlags := []struct {
 		key  string
 		flag string
@@ -67,6 +72,8 @@ func init() {
 		{"generate.png_compression", "png-compression"},
 		{"generate.seed", "seed"},
 		{"generate.keep_layers", "keep-layers"},
+		{"generate.format", "format"},
+		{"generate.output_file", "output-file"},
 	}
 
 	for _, bf := range bindFlags {
@@ -94,14 +101,31 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	pngCompression := viper.GetString("generate.png_compression")
 	seed := viper.GetInt64("generate.seed")
 	keepLayers := viper.GetBool("generate.keep_layers")
+	format := viper.GetString("generate.format")
+	outputFile := viper.GetString("generate.output_file")
 
 	if logger == nil {
 		initLogging()
 	}
 
+	// Validate format
+	if format != "folder" && format != "mbtiles" {
+		return fmt.Errorf("invalid format %q: must be 'folder' or 'mbtiles'", format)
+	}
+
+	// Validate MBTiles requirements
+	if format == "mbtiles" {
+		if outputFile == "" {
+			return fmt.Errorf("--output-file is required when using --format=mbtiles")
+		}
+		if bbox == "" {
+			return fmt.Errorf("mbtiles format requires batch generation (use --bbox)")
+		}
+	}
+
 	// Determine mode: batch (bbox provided) or single tile
 	if bbox != "" {
-		return runBatchGenerate(bbox, zoomMin, zoomMax, workers, showProgress, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers)
+		return runBatchGenerate(bbox, zoomMin, zoomMax, workers, showProgress, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers, format, outputFile)
 	}
 
 	return runSingleGenerate(zoom, x, y, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers)
@@ -172,7 +196,7 @@ func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName str
 	return nil
 }
 
-func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgress, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool) error {
+func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgress, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool, format, outputFile string) error {
 	// Parse bounding box
 	bbox, err := parseBBox(bboxStr)
 	if err != nil {
@@ -208,6 +232,7 @@ func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgres
 		"total_with_hidpi", totalTiles,
 		"workers", workers,
 		"output_dir", outputDir,
+		"format", format,
 	)
 
 	// Setup data source
@@ -222,9 +247,60 @@ func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgres
 	stylesDir := filepath.Join("assets", "styles")
 	texturesDir := filepath.Join("assets", "textures")
 
-	// Create generator
+	// Create MBTiles writer if needed
+	var mbtilesWriter *mbtiles.Writer
+	var mbtilesWriterHiDPI *mbtiles.Writer
+	if format == "mbtiles" {
+		// Calculate bounds from bbox for metadata
+		bounds := [4]float64{bbox[0], bbox[1], bbox[2], bbox[3]}
+		center := [3]float64{
+			(bbox[0] + bbox[2]) / 2,
+			(bbox[1] + bbox[3]) / 2,
+			float64((zoomMin + zoomMax) / 2),
+		}
+
+		metadata := mbtiles.Metadata{
+			Name:        "WaterColorMap",
+			Format:      "png",
+			MinZoom:     zoomMin,
+			MaxZoom:     zoomMax,
+			Bounds:      bounds,
+			Center:      center,
+			Attribution: "© OpenStreetMap contributors",
+			Description: "Watercolor-styled map tiles",
+			Type:        "baselayer",
+			Version:     "1.0",
+		}
+
+		mbtilesWriter, err = mbtiles.New(outputFile, metadata)
+		if err != nil {
+			return fmt.Errorf("failed to create MBTiles writer: %w", err)
+		}
+		defer mbtilesWriter.Close()
+
+		// Create separate writer for HiDPI tiles
+		if hidpi {
+			hidpiFile := strings.TrimSuffix(outputFile, ".mbtiles") + "@2x.mbtiles"
+			mbtilesWriterHiDPI, err = mbtiles.New(hidpiFile, metadata)
+			if err != nil {
+				mbtilesWriter.Close()
+				return fmt.Errorf("failed to create HiDPI MBTiles writer: %w", err)
+			}
+			defer mbtilesWriterHiDPI.Close()
+		}
+
+		logger.Info("MBTiles writers created", "base", outputFile, "hidpi", hidpi)
+	}
+
+	// Create generator with optional TileWriter
+	var tileWriter pipeline.TileWriter
+	if format == "mbtiles" {
+		tileWriter = mbtilesWriter
+	}
+
 	gen, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize, seed, keepLayers, logger, pipeline.GeneratorOptions{
 		PNGCompression: pngCompression,
+		TileWriter:     tileWriter,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init generator: %w", err)
@@ -242,21 +318,14 @@ func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgres
 		cancel()
 	}()
 
-	// Build task list
-	tasks := make([]worker.Task, 0, totalTiles)
+	// Build task list for base tiles
+	tasks := make([]worker.Task, 0, len(tiles))
 	for _, coords := range tiles {
 		tasks = append(tasks, worker.Task{
 			Coords: coords,
 			Force:  force,
 			Suffix: "",
 		})
-		if hidpi {
-			tasks = append(tasks, worker.Task{
-				Coords: coords,
-				Force:  force,
-				Suffix: "@2x",
-			})
-		}
 	}
 
 	// Setup progress tracking
@@ -269,11 +338,12 @@ func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgres
 		OnProgress: progress.Callback(),
 	})
 
-	// Run
+	// Run base tiles
+	logger.Info("Generating base tiles", "count", len(tasks))
 	results := pool.Run(ctx, tasks)
 	progress.Done()
 
-	// Summary
+	// Check for failures
 	var failedCount int
 	for _, r := range results {
 		if r.Err != nil {
@@ -285,7 +355,79 @@ func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgres
 	logger.Info(progress.Summary())
 
 	if failedCount > 0 {
-		return fmt.Errorf("%d tiles failed to generate", failedCount)
+		return fmt.Errorf("%d base tiles failed to generate", failedCount)
+	}
+
+	// Generate HiDPI tiles if requested
+	if hidpi {
+		logger.Info("Generating HiDPI tiles", "count", len(tiles))
+
+		// Create HiDPI generator with appropriate writer
+		var hidpiWriter pipeline.TileWriter
+		if format == "mbtiles" {
+			hidpiWriter = mbtilesWriterHiDPI
+		}
+
+		genHiDPI, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize*2, seed, keepLayers, logger, pipeline.GeneratorOptions{
+			PNGCompression: pngCompression,
+			TileWriter:     hidpiWriter,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to init HiDPI generator: %w", err)
+		}
+
+		// Build HiDPI task list
+		hidpiTasks := make([]worker.Task, 0, len(tiles))
+		for _, coords := range tiles {
+			hidpiTasks = append(hidpiTasks, worker.Task{
+				Coords: coords,
+				Force:  force,
+				Suffix: "@2x",
+			})
+		}
+
+		// Setup progress tracking for HiDPI
+		progressHiDPI := worker.NewProgress(len(hidpiTasks), showProgress)
+
+		// Create worker pool for HiDPI
+		poolHiDPI := worker.New(worker.Config{
+			Workers:    workers,
+			Generator:  genHiDPI,
+			OnProgress: progressHiDPI.Callback(),
+		})
+
+		// Run HiDPI tiles
+		resultsHiDPI := poolHiDPI.Run(ctx, hidpiTasks)
+		progressHiDPI.Done()
+
+		// Check for failures
+		var hidpiFailedCount int
+		for _, r := range resultsHiDPI {
+			if r.Err != nil {
+				hidpiFailedCount++
+				logger.Error("HiDPI tile generation failed", "coords", r.Task.Coords.String(), "error", r.Err)
+			}
+		}
+
+		logger.Info(progressHiDPI.Summary())
+
+		if hidpiFailedCount > 0 {
+			return fmt.Errorf("%d HiDPI tiles failed to generate", hidpiFailedCount)
+		}
+	}
+
+	// Flush MBTiles writers if used
+	if format == "mbtiles" {
+		logger.Info("Flushing MBTiles databases...")
+		if err := mbtilesWriter.Flush(); err != nil {
+			return fmt.Errorf("failed to flush base MBTiles: %w", err)
+		}
+		if hidpi && mbtilesWriterHiDPI != nil {
+			if err := mbtilesWriterHiDPI.Flush(); err != nil {
+				return fmt.Errorf("failed to flush HiDPI MBTiles: %w", err)
+			}
+		}
+		logger.Info("MBTiles generation complete", "base", outputFile)
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"image"
@@ -25,6 +26,15 @@ type GeneratorOptions struct {
 	// PNGCompression controls PNG encoding. Supported values:
 	// "default", "speed", "best", "none".
 	PNGCompression string
+
+	// TileWriter optionally writes tiles to an alternative storage backend (e.g., MBTiles).
+	// If nil, tiles are written to disk in outputDir.
+	TileWriter TileWriter
+}
+
+// TileWriter writes tile data to a storage backend.
+type TileWriter interface {
+	WriteTile(z, x, y int, pngData []byte) error
 }
 
 // DataSource fetches OSM features for a tile coordinate.
@@ -284,13 +294,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		final = cropNRGBA(composited, cropRect)
 	}
 
-	g.log().Info("Writing final tile", "coords", coords.String(), "path", finalPath)
-	outFile, err := os.Create(finalPath)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create tile file: %w", err)
-	}
-	defer outFile.Close() // nolint:errcheck
-
+	// Encode PNG to get the data
 	enc := png.Encoder{CompressionLevel: png.DefaultCompression}
 	switch strings.ToLower(strings.TrimSpace(g.options.PNGCompression)) {
 	case "", "default":
@@ -305,6 +309,33 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		// Keep default on unknown values.
 		enc.CompressionLevel = png.DefaultCompression
 	}
+
+	// Use TileWriter if provided, otherwise write to disk
+	if g.options.TileWriter != nil {
+		// Encode to bytes buffer
+		var buf bytes.Buffer
+		if err := enc.Encode(&buf, final); err != nil {
+			return "", "", fmt.Errorf("failed to encode tile: %w", err)
+		}
+
+		// Write through TileWriter interface
+		g.log().Info("Writing tile via TileWriter", "coords", coords.String())
+		if err := g.options.TileWriter.WriteTile(int(coords.Z), int(coords.X), int(coords.Y), buf.Bytes()); err != nil {
+			return "", "", fmt.Errorf("failed to write tile: %w", err)
+		}
+
+		// Return virtual path (no actual file)
+		return finalPath, layerDirReturn, nil
+	}
+
+	// Traditional file output
+	g.log().Info("Writing final tile", "coords", coords.String(), "path", finalPath)
+	outFile, err := os.Create(finalPath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create tile file: %w", err)
+	}
+	defer outFile.Close() // nolint:errcheck
+
 	if err := enc.Encode(outFile, final); err != nil {
 		return "", "", fmt.Errorf("failed to encode final tile: %w", err)
 	}

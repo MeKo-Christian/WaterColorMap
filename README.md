@@ -2,6 +2,8 @@
 
 Generate Stamen Watercolor–style raster map tiles from OpenStreetMap data — with multi-pass rendering, mask processing, watercolor textures, and seamless compositing.
 
+**[Live Demo](https://meko-christian.github.io/WaterColorMap/)**
+
 WaterColorMap is built for "old-school" raster cartography: we render clean layer masks (Mapnik), distort edges organically (blur + deterministic Perlin noise + threshold), apply seamless watercolor textures, then composite everything into final web-ready tiles.
 
 ## Highlights
