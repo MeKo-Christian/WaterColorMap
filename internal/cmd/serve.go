@@ -26,6 +26,7 @@ func init() {
 	serveCmd.Flags().String("addr", "127.0.0.1:8080", "Listen address (host:port)")
 	serveCmd.Flags().String("tiles-dir", "", "Directory containing tiles (defaults to --output-dir)")
 	serveCmd.Flags().String("demo-dir", filepath.Join("docs", "leaflet-demo"), "Directory for demo static files")
+	serveCmd.Flags().String("mbtiles", "", "Path to MBTiles file (alternative to tiles-dir)")
 
 	serveCmd.Flags().Bool("generate-missing", true, "Generate missing tiles on-demand and cache them to disk")
 	serveCmd.Flags().Bool("disable-cache", false, "Always regenerate tiles (still writes to disk)")
@@ -47,6 +48,7 @@ func init() {
 	mustBind("serve.addr", "addr")
 	mustBind("serve.tiles_dir", "tiles-dir")
 	mustBind("serve.demo_dir", "demo-dir")
+	mustBind("serve.mbtiles", "mbtiles")
 	mustBind("serve.generate_missing", "generate-missing")
 	mustBind("serve.disable_cache", "disable-cache")
 	mustBind("serve.max_concurrent_generations", "max-concurrent-generations")
@@ -70,6 +72,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		tilesDir = viper.GetString("output-dir")
 	}
 	demoDir := viper.GetString("serve.demo_dir")
+	mbtilesPath := viper.GetString("serve.mbtiles")
 	generateMissing := viper.GetBool("serve.generate_missing")
 	disableCache := viper.GetBool("serve.disable_cache")
 	maxConc := viper.GetInt("serve.max_concurrent_generations")
@@ -80,33 +83,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	pngCompression := viper.GetString("serve.png_compression")
 	seed := viper.GetInt64("serve.seed")
 	keepLayers := viper.GetBool("serve.keep_layers")
-
-	dataSourceName := viper.GetString("data-source")
-	var ds pipeline.DataSource
-	switch dataSourceName {
-	case "overpass":
-		ds = datasource.NewOverpassDataSource("")
-	default:
-		return fmt.Errorf("unsupported data source: %s", dataSourceName)
-	}
-
-	od, err := server.NewOnDemandTiles(ds, server.OnDemandTilesConfig{
-		TilesDir:                 tilesDir,
-		StylesDir:                filepath.Join("assets", "styles"),
-		TexturesDir:              filepath.Join("assets", "textures"),
-		BaseTileSize:             baseTileSize,
-		Seed:                     seed,
-		KeepLayers:               keepLayers,
-		PNGCompression:           pngCompression,
-		GenerateMissing:          generateMissing,
-		DisableCache:             disableCache,
-		MaxConcurrentGenerations: maxConc,
-		GenerationTimeout:        genTimeout,
-		CacheControl:             cacheControl,
-	}, logger)
-	if err != nil {
-		return err
-	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -125,8 +101,50 @@ func runServe(cmd *cobra.Command, args []string) error {
 	fs := http.FileServer(http.Dir(demoDir))
 	mux.Handle("/demo/", http.StripPrefix("/demo/", fs))
 
-	// Tiles (with optional on-demand generation)
-	mux.Handle("/tiles/", withCORS(od.Handler()))
+	// Tiles handler - use MBTiles if specified, otherwise folder-based with on-demand generation
+	if mbtilesPath != "" {
+		logger.Info("Using MBTiles for tile serving", "path", mbtilesPath)
+		mbHandler, err := server.NewMBTilesHandler(server.MBTilesConfig{
+			MBTilesPath:  mbtilesPath,
+			CacheControl: cacheControl,
+		}, logger)
+		if err != nil {
+			return fmt.Errorf("failed to create MBTiles handler: %w", err)
+		}
+		defer mbHandler.Close()
+
+		mux.Handle("/tiles/", withCORS(mbHandler.Handler()))
+	} else {
+		logger.Info("Using folder-based tile serving with on-demand generation", "tiles_dir", tilesDir)
+		dataSourceName := viper.GetString("data-source")
+		var ds pipeline.DataSource
+		switch dataSourceName {
+		case "overpass":
+			ds = datasource.NewOverpassDataSource("")
+		default:
+			return fmt.Errorf("unsupported data source: %s", dataSourceName)
+		}
+
+		od, err := server.NewOnDemandTiles(ds, server.OnDemandTilesConfig{
+			TilesDir:                 tilesDir,
+			StylesDir:                filepath.Join("assets", "styles"),
+			TexturesDir:              filepath.Join("assets", "textures"),
+			BaseTileSize:             baseTileSize,
+			Seed:                     seed,
+			KeepLayers:               keepLayers,
+			PNGCompression:           pngCompression,
+			GenerateMissing:          generateMissing,
+			DisableCache:             disableCache,
+			MaxConcurrentGenerations: maxConc,
+			GenerationTimeout:        genTimeout,
+			CacheControl:             cacheControl,
+		}, logger)
+		if err != nil {
+			return err
+		}
+
+		mux.Handle("/tiles/", withCORS(od.Handler()))
+	}
 
 	logger.Info("demo server listening",
 		"addr", addr,

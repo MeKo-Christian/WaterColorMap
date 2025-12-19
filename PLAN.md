@@ -281,11 +281,11 @@ Then each layer gets:
 
 ### 5.4 Tile Storage Format
 
-- [ ] Research MBTiles format
-- [ ] Implement MBTiles writer
-- [ ] Convert folder tiles to MBTiles
-- [ ] Test MBTiles serving
-- [ ] Document MBTiles usage
+- [x] Research MBTiles format
+- [x] Implement MBTiles writer
+- [x] Convert folder tiles to MBTiles
+- [x] Test MBTiles serving
+- [x] Document MBTiles usage
 
 ### 5.5 Tile Hosting Options
 
@@ -433,6 +433,43 @@ Each phase is considered complete when:
 - Maintain deterministic processing for seamless tile edges
 - Balance authenticity with modern performance
 
+## MBTiles Usage (Phase 5.4)
+
+### Generate tiles directly to MBTiles
+
+```bash
+watercolormap generate --format=mbtiles \
+  --output-file=hanover.mbtiles \
+  --bbox=9.5,51.8,9.9,52.1 \
+  --zoom-min=10 --zoom-max=15
+```
+
+For HiDPI tiles, two separate files are created:
+- `hanover.mbtiles` (base 256px tiles)
+- `hanover@2x.mbtiles` (512px tiles)
+
+### Convert existing folder tiles to MBTiles
+
+```bash
+watercolormap convert \
+  --input-dir=./tiles \
+  --output=hanover.mbtiles \
+  --name="WaterColorMap Hanover" \
+  --bounds="9.5,51.8,9.9,52.1"
+```
+
+### Serve tiles from MBTiles
+
+```bash
+watercolormap serve --mbtiles=hanover.mbtiles --port=8080
+```
+
+MBTiles format provides:
+- Single file portability (no thousands of individual files)
+- Efficient storage with gzip compression
+- Standard SQLite format compatible with most map tools
+- TMS coordinate system (Y-axis inverted from XYZ)
+
 ## References
 
 - [Stamen Watercolor Process](https://stamen.com/watercolor-process-3dd5135861fe/)
@@ -441,3 +478,4 @@ Each phase is considered complete when:
 - [OpenStreetMap Data](https://www.openstreetmap.org/)
 - [Geofabrik Downloads](https://download.geofabrik.de/)
 - [Natural Earth Data](https://www.naturalearthdata.com/)
+- [MBTiles Specification](https://github.com/mapbox/mbtiles-spec)
