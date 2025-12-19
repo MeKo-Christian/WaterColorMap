@@ -1,68 +1,3 @@
-// Browser-based IndexedDB cache for tiles
-class TileCache {
-  constructor(dbName = "watercolormap-tiles") {
-    this.dbName = dbName;
-    this.db = null;
-    this.ready = this.init();
-  }
-
-  async init() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(this.dbName, 1);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => {
-        this.db = req.result;
-        resolve();
-      };
-      req.onupgradeneeded = (e) => {
-        const db = e.target.result;
-        if (!db.objectStoreNames.contains("tiles")) {
-          db.createObjectStore("tiles", { keyPath: "key" });
-        }
-      };
-    });
-  }
-
-  async get(z, x, y, is2x = false) {
-    await this.ready;
-    const suffix = is2x ? "@2x" : "";
-    const key = `z${z}_x${x}_y${y}${suffix}`;
-
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(["tiles"], "readonly");
-      const store = tx.objectStore("tiles");
-      const req = store.get(key);
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result?.blob);
-    });
-  }
-
-  async set(z, x, y, blob, is2x = false) {
-    await this.ready;
-    const suffix = is2x ? "@2x" : "";
-    const key = `z${z}_x${x}_y${y}${suffix}`;
-
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(["tiles"], "readwrite");
-      const store = tx.objectStore("tiles");
-      const req = store.put({ key, blob, timestamp: Date.now() });
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve();
-    });
-  }
-
-  async clear() {
-    await this.ready;
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(["tiles"], "readwrite");
-      const store = tx.objectStore("tiles");
-      const req = store.clear();
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve();
-    });
-  }
-}
-
 // Simple semaphore for limiting concurrent operations
 class Semaphore {
   constructor(max) {
@@ -113,34 +48,13 @@ function getMaxConcurrency() {
 // Demo UI Manager
 class WaterColorMapPlayground {
   constructor() {
-    this.cache = new TileCache();
     this.map = null;
     this.tileLayer = null;
     this.statusEl = document.getElementById("status");
-    this.backendBaseUrl = this.getInitialBackendBaseUrl();
-    this._missingBackendNotified = false;
     this.maxConcurrency = getMaxConcurrency();
     this.fetchSemaphore = new Semaphore(this.maxConcurrency);
+    this.overpassEndpoint = "https://overpass-api.de/api/interpreter";
     this.init();
-  }
-
-  getInitialBackendBaseUrl() {
-    const params = new URLSearchParams(window.location.search);
-    const fromQuery = params.get("backend");
-
-    if (fromQuery) {
-      return fromQuery.replace(/\/$/, "");
-    }
-
-    // If this page is served over HTTPS (e.g. GitHub Pages), do not default to an
-    // HTTP localhost backend (mixed-content) and do not guess a same-origin backend
-    // (usually no /tiles there). Require an explicit backend.
-    if (window.location.protocol === "https:") {
-      return "";
-    }
-
-    // Default to localhost for local development (HTTP).
-    return "http://127.0.0.1:8080";
   }
 
   async init() {
@@ -157,14 +71,8 @@ class WaterColorMapPlayground {
 
     this.tileLayer.addTo(this.map);
 
-    // Add controls
-    this.setupControls();
-
-    const backendLabel = this.backendBaseUrl
-      ? this.backendBaseUrl
-      : "(not set — use ?backend=... or the Backend URL button)";
     this.updateStatus(
-      `Ready. Backend: ${backendLabel} (${this.maxConcurrency} CPUs)`,
+      `Ready. In-browser rendering via Overpass (${this.maxConcurrency} CPUs)`
     );
   }
 
@@ -205,78 +113,68 @@ class WaterColorMapPlayground {
     });
   }
 
-  makeTileUrl(z, x, y, is2x) {
-    const suffix = is2x ? "@2x" : "";
-
-    // If WASM is available, let it compute the canonical filename.
-    if (typeof watercolorGenerateTile === "function") {
-      try {
-        const req = { zoom: z, x, y, hidpi: is2x };
-        const res = watercolorGenerateTile(JSON.stringify(req));
-        if (res && res.filename) {
-          return `${this.backendBaseUrl}/tiles/${res.filename}`;
-        }
-      } catch (e) {
-        // fall through
-      }
+  async fetchOverpassJSON(query) {
+    const resp = await fetch(this.overpassEndpoint, {
+      method: "POST",
+      mode: "cors",
+      body: query,
+    });
+    if (!resp.ok) {
+      throw new Error(`Overpass HTTP ${resp.status}`);
     }
-
-    // Fallback (no WASM): match the server's flat filename scheme.
-    return `${this.backendBaseUrl}/tiles/z${z}_x${x}_y${y}${suffix}.png`;
+    return await resp.text();
   }
 
   async loadTileToImg({ z, x, y, is2x, img }) {
-    if (!this.backendBaseUrl) {
-      img.src = this.makePlaceholderDataUrl("No backend");
-      if (!this._missingBackendNotified) {
-        this._missingBackendNotified = true;
-        this.updateStatus(
-          "No backend set. Use ?backend=... (or the Backend URL button).",
-        );
-      }
+    if (typeof watercolorOverpassQueryForTile !== "function") {
+      img.src = this.makePlaceholderDataUrl("WASM not ready");
+      this.updateStatus("WASM not ready");
       return;
     }
-
-    // Cache-first
-    const cached = await this.cache.get(z, x, y, is2x);
-    if (cached) {
-      const objectUrl = URL.createObjectURL(cached);
-      img.onload = () => URL.revokeObjectURL(objectUrl);
-      img.onerror = () => URL.revokeObjectURL(objectUrl);
-      img.src = objectUrl;
+    if (typeof watercolorRenderTileFromOverpassJSON !== "function") {
+      img.src = this.makePlaceholderDataUrl("WASM API missing");
+      this.updateStatus("WASM API missing");
       return;
     }
 
     // Fetch from backend with concurrency limit
     await this.fetchSemaphore.acquire();
     try {
-      const url = this.makeTileUrl(z, x, y, is2x);
-      this.updateStatus(
-        `Fetching z${z} ${x}/${y}... (${this.maxConcurrency} concurrent)`,
-      );
-
-      let resp;
       try {
-        resp = await fetch(url, { mode: "cors" });
+        const req = { zoom: z, x, y, hidpi: is2x };
+        const q = watercolorOverpassQueryForTile(JSON.stringify(req));
+        if (!q || !q.query) {
+          throw new Error(q && q.error ? q.error : "query build failed");
+        }
+
+        this.updateStatus(
+          `Overpass z${z} ${x}/${y}... (${this.maxConcurrency} concurrent)`
+        );
+
+        const overpassJSON = await this.fetchOverpassJSON(q.query);
+        const rendered = watercolorRenderTileFromOverpassJSON(
+          JSON.stringify(req),
+          overpassJSON
+        );
+        if (!rendered || !rendered.pngBase64) {
+          throw new Error(
+            rendered && rendered.error ? rendered.error : "render failed"
+          );
+        }
+
+        img.src = `data:${rendered.mime || "image/png"};base64,${
+          rendered.pngBase64
+        }`;
+        if (typeof rendered.ms === "number") {
+          this.updateStatus(
+            `Rendered z${z} ${x}/${y} in ${rendered.ms}ms (${this.maxConcurrency} concurrent)`
+          );
+        }
       } catch (err) {
-        img.src = this.makePlaceholderDataUrl("Backend unreachable");
-        this.updateStatus(`Backend unreachable: ${this.backendBaseUrl}`);
+        img.src = this.makePlaceholderDataUrl("Render error");
+        this.updateStatus(String(err && err.message ? err.message : err));
         return;
       }
-
-      if (!resp.ok) {
-        img.src = this.makePlaceholderDataUrl(`HTTP ${resp.status}`);
-        this.updateStatus(`Tile fetch failed: HTTP ${resp.status}`);
-        return;
-      }
-
-      const blob = await resp.blob();
-      await this.cache.set(z, x, y, blob, is2x);
-
-      const objectUrl = URL.createObjectURL(blob);
-      img.onload = () => URL.revokeObjectURL(objectUrl);
-      img.onerror = () => URL.revokeObjectURL(objectUrl);
-      img.src = objectUrl;
     } finally {
       this.fetchSemaphore.release();
     }
@@ -287,46 +185,13 @@ class WaterColorMapPlayground {
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
   <rect width="100%" height="100%" fill="#f5f5f5"/>
   <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#777">${String(
-    message,
+    message
   )
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")}</text>
 </svg>`;
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-  }
-
-  setupControls() {
-    const controlDiv = document.getElementById("controls");
-    controlDiv.innerHTML = `
-      <div>
-        <button id="clearCache" class="btn">Clear Cache</button>
-        <button id="toggleMode" class="btn">Backend URL</button>
-      </div>
-      <div style="margin-top: 10px; font-size: 12px;">
-        <span id="cacheStatus">Cache: -</span><br>
-        <span id="renderStatus">Status: -</span>
-      </div>
-    `;
-
-    document
-      .getElementById("clearCache")
-      .addEventListener("click", async () => {
-        await this.cache.clear();
-        this.updateStatus("Cache cleared");
-        this.map._repaint();
-      });
-
-    document.getElementById("toggleMode").addEventListener("click", () => {
-      const next = prompt(
-        "Backend base URL (example: http://127.0.0.1:8080).\n\nYou can also set ?backend=... in the URL.",
-        this.backendBaseUrl,
-      );
-      if (!next) return;
-      this.backendBaseUrl = next.replace(/\/$/, "");
-      this.updateStatus(`Backend set: ${this.backendBaseUrl}`);
-      this.map._repaint();
-    });
   }
 
   updateStatus(msg) {

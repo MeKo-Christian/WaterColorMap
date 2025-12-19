@@ -171,3 +171,12 @@ func isCivic(tags map[string]string) bool {
 		amenity == "library" ||
 		amenity == "town_hall"
 }
+
+// convertTags converts OSM tags to generic properties map
+func convertTags(tags map[string]string) map[string]interface{} {
+	props := make(map[string]interface{}, len(tags))
+	for k, v := range tags {
+		props[k] = v
+	}
+	return props
+}
