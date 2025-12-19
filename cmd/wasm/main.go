@@ -48,13 +48,13 @@ func getConcurrency(_ js.Value, _ []js.Value) interface{} {
 // In the browser, we delegate to a backend server or use a simplified renderer
 func generateTile(this js.Value, args []js.Value) interface{} {
 	if len(args) < 1 {
-		return map[string]string{"error": "missing arguments"}
+		return map[string]any{"error": "missing arguments"}
 	}
 
 	reqStr := args[0].String()
 	var req GenerateTileRequest
 	if err := json.Unmarshal([]byte(reqStr), &req); err != nil {
-		return map[string]string{"error": fmt.Sprintf("failed to parse request: %v", err)}
+		return map[string]any{"error": fmt.Sprintf("failed to parse request: %v", err)}
 	}
 
 	// We cannot render Mapnik in WASM, but we *can* provide a canonical filename builder
@@ -65,9 +65,9 @@ func generateTile(this js.Value, args []js.Value) interface{} {
 	}
 
 	key := fmt.Sprintf("z%d_x%d_y%d%s", req.Zoom, req.X, req.Y, suffix)
-	// syscall/js.ValueOf cannot convert arbitrary Go structs.
-	// Return a JS-convertible object instead.
-	return map[string]string{
+	// syscall/js.ValueOf cannot convert arbitrary Go values.
+	// Use map[string]any (JS-convertible) rather than map[string]string.
+	return map[string]any{
 		"key":      key,
 		"filename": key + ".png",
 	}
@@ -76,7 +76,7 @@ func generateTile(this js.Value, args []js.Value) interface{} {
 // initGame is called on page load to set up the WASM module
 func initGame(this js.Value, args []js.Value) interface{} {
 	fmt.Println("WaterColorMap WASM module initialized")
-	return map[string]string{"status": "ready"}
+	return map[string]any{"status": "ready"}
 }
 
 func main() {
