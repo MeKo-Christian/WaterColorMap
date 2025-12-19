@@ -32,7 +32,7 @@
       try {
         const result = await WebAssembly.instantiateStreaming(
           fetchWasm(url),
-          go.importObject,
+          go.importObject
         );
         return { go, instance: result.instance };
       } catch (err) {
@@ -51,7 +51,8 @@
     while (Date.now() - start < timeoutMs) {
       if (
         typeof globalThis.watercolorInit === "function" &&
-        typeof globalThis.watercolorGenerateTile === "function"
+        typeof globalThis.watercolorOverpassQueryForTile === "function" &&
+        typeof globalThis.watercolorRenderTileFromOverpassJSON === "function"
       ) {
         return true;
       }
