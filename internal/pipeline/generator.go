@@ -30,6 +30,10 @@ type GeneratorOptions struct {
 	// TileWriter optionally writes tiles to an alternative storage backend (e.g., MBTiles).
 	// If nil, tiles are written to disk in outputDir.
 	TileWriter TileWriter
+
+	// FolderStructure controls file naming for folder format. Supported values:
+	// "flat" (z{z}_x{x}_y{y}.png), "nested" ({z}/{x}/{y}.png).
+	FolderStructure string
 }
 
 // TileWriter writes tile data to a storage backend.
@@ -87,7 +91,23 @@ func NewGenerator(ds DataSource, stylesDir, texturesDir, outputDir string, tileS
 // Returns the final tile path and (optionally) the layer directory when kept.
 func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool, filenameSuffix string) (string, string, error) {
 	suffix := strings.TrimSpace(filenameSuffix)
-	finalPath := filepath.Join(g.outputDir, fmt.Sprintf("%s%s.png", coords.String(), suffix))
+
+	// Compute final path based on folder structure setting
+	var finalPath string
+	var tileDir string
+	if g.options.FolderStructure == "nested" {
+		// Nested structure: {z}/{x}/{y}.png
+		z := fmt.Sprintf("%d", coords.Z)
+		x := fmt.Sprintf("%d", coords.X)
+		y := fmt.Sprintf("%d", coords.Y)
+		tileDir = filepath.Join(g.outputDir, z, x)
+		finalPath = filepath.Join(tileDir, y+suffix+".png")
+	} else {
+		// Flat structure (default): z{z}_x{x}_y{y}.png
+		finalPath = filepath.Join(g.outputDir, fmt.Sprintf("%s%s.png", coords.String(), suffix))
+		tileDir = g.outputDir
+	}
+
 	if !force {
 		if _, err := os.Stat(finalPath); err == nil {
 			g.log().Info("Tile already exists; skipping", "coords", coords.String(), "path", finalPath)
@@ -95,7 +115,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		}
 	}
 
-	if err := os.MkdirAll(g.outputDir, 0o755); err != nil {
+	if err := os.MkdirAll(tileDir, 0o755); err != nil {
 		return "", "", fmt.Errorf("failed to create output dir: %w", err)
 	}
 

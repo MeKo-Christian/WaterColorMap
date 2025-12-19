@@ -52,10 +52,10 @@ class WaterColorMapPlayground {
     this.tileLayer = null;
     this.statusEl = document.getElementById("status");
     this.maxConcurrency = getMaxConcurrency();
-    // We use two semaphores: 
+    // We use two semaphores:
     // 1. overpassSemaphore: Strict limit for API calls (Overpass is very sensitive)
     // 2. renderSemaphore: Limit for CPU-intensive WASM rendering
-    this.overpassSemaphore = new Semaphore(2); 
+    this.overpassSemaphore = new Semaphore(2);
     this.renderSemaphore = new Semaphore(this.maxConcurrency);
     this.overpassEndpoint = "https://overpass-api.de/api/interpreter";
     this.init();
@@ -133,8 +133,12 @@ class WaterColorMapPlayground {
             retryCount++;
             // Exponential backoff: 2s, 4s, 8s, 16s, 32s + jitter
             const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
-            this.updateStatus(`Overpass busy (${resp.status}), retrying in ${Math.round(delay)}ms... (attempt ${retryCount}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, delay));
+            this.updateStatus(
+              `Overpass busy (${resp.status}), retrying in ${Math.round(
+                delay
+              )}ms... (attempt ${retryCount}/${maxRetries})`
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
             continue;
           }
         }
@@ -148,8 +152,10 @@ class WaterColorMapPlayground {
         if (retryCount < maxRetries) {
           retryCount++;
           const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
-          this.updateStatus(`Overpass connection error, retrying in ${Math.round(delay)}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          this.updateStatus(
+            `Overpass connection error, retrying in ${Math.round(delay)}ms...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
         }
         throw err;
@@ -158,6 +164,27 @@ class WaterColorMapPlayground {
   }
 
   async loadTileToImg({ z, x, y, is2x, img }) {
+    // Step 1: Try to fetch from static pre-generated tiles
+    // Only for standard resolution tiles (is2x=false) and supported zoom levels (13-14)
+    if (!is2x && z >= 13 && z <= 14) {
+      const staticTileUrl = `./static-tiles/${z}/${x}/${y}.png`;
+
+      try {
+        const response = await fetch(staticTileUrl);
+        if (response.ok) {
+          const blob = await response.blob();
+          img.src = URL.createObjectURL(blob);
+          this.updateStatus(`Loaded static tile z${z} ${x}/${y}`);
+          return;
+        }
+        // If 404, fall through to WASM generation
+      } catch (err) {
+        // Network error, fall through to WASM generation
+        console.debug(`Static tile fetch failed for z${z} ${x}/${y}:`, err);
+      }
+    }
+
+    // Step 2: Fall back to existing WASM pipeline
     if (typeof watercolorOverpassQueryForTile !== "function") {
       img.src = this.makePlaceholderDataUrl("WASM not ready");
       this.updateStatus("WASM not ready");
@@ -199,12 +226,16 @@ class WaterColorMapPlayground {
         JSON.stringify(req),
         overpassJSON
       );
-      
+
       if (!rendered || !rendered.pngBase64) {
-        throw new Error(rendered && rendered.error ? rendered.error : "render failed");
+        throw new Error(
+          rendered && rendered.error ? rendered.error : "render failed"
+        );
       }
 
-      img.src = `data:${rendered.mime || "image/png"};base64,${rendered.pngBase64}`;
+      img.src = `data:${rendered.mime || "image/png"};base64,${
+        rendered.pngBase64
+      }`;
       if (typeof rendered.ms === "number") {
         this.updateStatus(`Rendered z${z} ${x}/${y} in ${rendered.ms}ms`);
       }

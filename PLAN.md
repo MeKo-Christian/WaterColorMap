@@ -317,8 +317,11 @@ Then each layer gets:
 - [x] Display rendering progress and cache status in the UI
 - [x] Document browser limitations and expected slowness without proper caching backend
 - [x] Add disclaimer that this is a proof-of-concept playground, not production-grade
+- [x] Add static tile pre-generation for demo area (Hanover, z13-14)
+- [x] Implement hybrid tile serving (static first, WASM fallback)
+- [x] Configure CI workflow to regenerate tiles on code changes
 
-**Note**: Rendering will be intentionally slow in the browser (seconds per tile) without backend caching. Useful for demonstration and exploration, but refer users to the hosted service for production use.
+**Note**: The playground now uses hybrid tile serving with pre-generated static tiles for the demo area (Hanover, zoom 13-14) served from GitHub Pages, falling back to on-demand WASM generation for uncovered areas.
 
 ### 5.7 Data Update Pipeline
 

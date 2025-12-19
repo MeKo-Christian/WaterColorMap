@@ -53,6 +53,7 @@ func init() {
 	// Output format flags
 	generateCmd.Flags().String("format", "folder", "Output format: folder or mbtiles")
 	generateCmd.Flags().String("output-file", "", "Output file path for MBTiles format (e.g., tiles.mbtiles)")
+	generateCmd.Flags().String("folder-structure", "flat", "Folder structure for folder format: flat (z{z}_x{x}_y{y}.png) or nested ({z}/{x}/{y}.png)")
 
 	bindFlags := []struct {
 		key  string
@@ -74,6 +75,7 @@ func init() {
 		{"generate.keep_layers", "keep-layers"},
 		{"generate.format", "format"},
 		{"generate.output_file", "output-file"},
+		{"generate.folder_structure", "folder-structure"},
 	}
 
 	for _, bf := range bindFlags {
@@ -103,6 +105,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	keepLayers := viper.GetBool("generate.keep_layers")
 	format := viper.GetString("generate.format")
 	outputFile := viper.GetString("generate.output_file")
+	folderStructure := viper.GetString("generate.folder_structure")
 
 	if logger == nil {
 		initLogging()
@@ -111,6 +114,11 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	// Validate format
 	if format != "folder" && format != "mbtiles" {
 		return fmt.Errorf("invalid format %q: must be 'folder' or 'mbtiles'", format)
+	}
+
+	// Validate folder structure
+	if folderStructure != "flat" && folderStructure != "nested" {
+		return fmt.Errorf("invalid folder-structure %q: must be 'flat' or 'nested'", folderStructure)
 	}
 
 	// Validate MBTiles requirements
@@ -125,13 +133,13 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 	// Determine mode: batch (bbox provided) or single tile
 	if bbox != "" {
-		return runBatchGenerate(bbox, zoomMin, zoomMax, workers, showProgress, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers, format, outputFile)
+		return runBatchGenerate(bbox, zoomMin, zoomMax, workers, showProgress, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers, format, outputFile, folderStructure)
 	}
 
-	return runSingleGenerate(zoom, x, y, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers)
+	return runSingleGenerate(zoom, x, y, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers, folderStructure)
 }
 
-func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool) error {
+func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool, folderStructure string) error {
 	coords := tile.NewCoords(uint32(zoom), uint32(x), uint32(y))
 
 	logger.Info("Starting tile generation",
@@ -162,7 +170,8 @@ func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName str
 	texturesDir := filepath.Join("assets", "textures")
 
 	gen, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize, seed, keepLayers, logger, pipeline.GeneratorOptions{
-		PNGCompression: pngCompression,
+		PNGCompression:  pngCompression,
+		FolderStructure: folderStructure,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init generator: %w", err)
@@ -181,7 +190,8 @@ func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName str
 
 	if hidpi {
 		gen2x, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize*2, seed, keepLayers, logger, pipeline.GeneratorOptions{
-			PNGCompression: pngCompression,
+			PNGCompression:  pngCompression,
+			FolderStructure: folderStructure,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to init hidpi generator: %w", err)
@@ -196,7 +206,7 @@ func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName str
 	return nil
 }
 
-func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgress, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool, format, outputFile string) error {
+func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgress, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool, format, outputFile, folderStructure string) error {
 	// Parse bounding box
 	bbox, err := parseBBox(bboxStr)
 	if err != nil {
@@ -299,8 +309,9 @@ func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgres
 	}
 
 	gen, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize, seed, keepLayers, logger, pipeline.GeneratorOptions{
-		PNGCompression: pngCompression,
-		TileWriter:     tileWriter,
+		PNGCompression:  pngCompression,
+		TileWriter:      tileWriter,
+		FolderStructure: folderStructure,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to init generator: %w", err)
@@ -369,8 +380,9 @@ func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgres
 		}
 
 		genHiDPI, err := pipeline.NewGenerator(ds, stylesDir, texturesDir, outputDir, tileSize*2, seed, keepLayers, logger, pipeline.GeneratorOptions{
-			PNGCompression: pngCompression,
-			TileWriter:     hidpiWriter,
+			PNGCompression:  pngCompression,
+			TileWriter:      hidpiWriter,
+			FolderStructure: folderStructure,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to init HiDPI generator: %w", err)
