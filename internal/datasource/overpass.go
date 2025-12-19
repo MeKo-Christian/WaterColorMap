@@ -53,7 +53,7 @@ func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile 
 	}
 
 	// Convert to feature collection
-	features := ds.extractFeatures(&result)
+	features := ExtractFeaturesFromOverpassResult(&result)
 
 	return &types.TileData{
 		Coordinate: tile,

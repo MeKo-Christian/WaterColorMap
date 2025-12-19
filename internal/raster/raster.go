@@ -1,0 +1,237 @@
+package raster
+
+import (
+	"image"
+	"image/color"
+	"math"
+
+	"github.com/MeKo-Tech/watercolormap/internal/geojson"
+	"github.com/MeKo-Tech/watercolormap/internal/types"
+	"github.com/paulmach/orb"
+	"golang.org/x/image/vector"
+)
+
+type Renderer struct {
+	zoom      int
+	tileSize  int
+	offsetX   int // global pixel space
+	offsetY   int // global pixel space
+	canvasW   int
+	canvasH   int
+	fillColor color.NRGBA
+}
+
+// NewRenderer creates a renderer that maps lon/lat to a pixel canvas.
+// offsetX/offsetY are the top-left pixel of the canvas in global pixel coordinates at the given zoom.
+func NewRenderer(zoom int, tileSize int, canvasW int, canvasH int, offsetX int, offsetY int) *Renderer {
+	return &Renderer{
+		zoom:      zoom,
+		tileSize:  tileSize,
+		offsetX:   offsetX,
+		offsetY:   offsetY,
+		canvasW:   canvasW,
+		canvasH:   canvasH,
+		fillColor: color.NRGBA{R: 0, G: 0, B: 0, A: 255},
+	}
+}
+
+func (r *Renderer) RenderLayers(fc types.FeatureCollection) map[geojson.LayerType]*image.NRGBA {
+	b := image.Rect(0, 0, r.canvasW, r.canvasH)
+	water := image.NewNRGBA(b)
+	parks := image.NewNRGBA(b)
+	civic := image.NewNRGBA(b)
+	roads := image.NewNRGBA(b)
+	highways := image.NewNRGBA(b)
+
+	// Water polygons/lines
+	for i := range fc.Water {
+		r.renderFeature(water, &fc.Water[i], 6)
+	}
+
+	// Parks polygons
+	for i := range fc.Parks {
+		r.renderFeature(parks, &fc.Parks[i], 0)
+	}
+
+	// Civic = civic + buildings
+	for i := range fc.Civic {
+		r.renderFeature(civic, &fc.Civic[i], 0)
+	}
+	for i := range fc.Buildings {
+		r.renderFeature(civic, &fc.Buildings[i], 0)
+	}
+
+	// Roads + derived highways
+	for i := range fc.Roads {
+		f := &fc.Roads[i]
+		if isHighway(f) {
+			r.renderFeature(highways, f, 4)
+		} else {
+			r.renderFeature(roads, f, 3)
+		}
+	}
+
+	return map[geojson.LayerType]*image.NRGBA{
+		geojson.LayerWater:    water,
+		geojson.LayerParks:    parks,
+		geojson.LayerCivic:    civic,
+		geojson.LayerRoads:    roads,
+		geojson.LayerHighways: highways,
+	}
+}
+
+func isHighway(f *types.Feature) bool {
+	if f == nil || f.Properties == nil {
+		return false
+	}
+	hw, _ := f.Properties["highway"].(string)
+	switch hw {
+	case "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link":
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *Renderer) renderFeature(dst *image.NRGBA, f *types.Feature, strokeWidth int) {
+	if f == nil {
+		return
+	}
+
+	switch g := f.Geometry.(type) {
+	case orb.Polygon:
+		r.fillPolygon(dst, g)
+	case orb.MultiPolygon:
+		for _, p := range g {
+			r.fillPolygon(dst, p)
+		}
+	case orb.Ring:
+		r.fillPolygon(dst, orb.Polygon{g})
+	case orb.LineString:
+		w := strokeWidth
+		if w <= 0 {
+			w = 3
+		}
+		r.strokeLineString(dst, g, w)
+	case orb.MultiLineString:
+		w := strokeWidth
+		if w <= 0 {
+			w = 3
+		}
+		for _, ls := range g {
+			r.strokeLineString(dst, ls, w)
+		}
+	default:
+		// ignore points/unknown geometries (e.g. relation placeholders)
+	}
+}
+
+func (r *Renderer) fillPolygon(dst *image.NRGBA, poly orb.Polygon) {
+	if len(poly) == 0 {
+		return
+	}
+
+	ras := vector.NewRasterizer(r.canvasW, r.canvasH)
+
+	for _, ring := range poly {
+		if len(ring) < 3 {
+			continue
+		}
+		// MoveTo/LineTo expect fixed-point 26.6.
+		first := true
+		for _, pt := range ring {
+			x, y := r.lonLatToLocalPx(pt[0], pt[1])
+			fx := float32(x)
+			fy := float32(y)
+			if first {
+				ras.MoveTo(fx, fy)
+				first = false
+			} else {
+				ras.LineTo(fx, fy)
+			}
+		}
+		ras.ClosePath()
+	}
+
+	src := image.NewUniform(r.fillColor)
+	ras.Draw(dst, dst.Bounds(), src, image.Point{})
+}
+
+func (r *Renderer) strokeLineString(dst *image.NRGBA, ls orb.LineString, width int) {
+	if len(ls) < 2 {
+		return
+	}
+	radius := float64(width) / 2.0
+	step := 0.75
+	if width >= 5 {
+		step = 0.9
+	}
+
+	for i := 0; i < len(ls)-1; i++ {
+		x0, y0 := r.lonLatToLocalPx(ls[i][0], ls[i][1])
+		x1, y1 := r.lonLatToLocalPx(ls[i+1][0], ls[i+1][1])
+
+		dx := x1 - x0
+		dy := y1 - y0
+		segLen := math.Hypot(dx, dy)
+		if segLen == 0 {
+			r.drawDisc(dst, x0, y0, radius)
+			continue
+		}
+
+		steps := int(math.Ceil(segLen / step))
+		for s := 0; s <= steps; s++ {
+			t := float64(s) / float64(steps)
+			x := x0 + dx*t
+			y := y0 + dy*t
+			r.drawDisc(dst, x, y, radius)
+		}
+	}
+}
+
+func (r *Renderer) drawDisc(dst *image.NRGBA, cx, cy float64, radius float64) {
+	minX := int(math.Floor(cx - radius))
+	maxX := int(math.Ceil(cx + radius))
+	minY := int(math.Floor(cy - radius))
+	maxY := int(math.Ceil(cy + radius))
+
+	if minX < 0 {
+		minX = 0
+	}
+	if minY < 0 {
+		minY = 0
+	}
+	if maxX >= r.canvasW {
+		maxX = r.canvasW - 1
+	}
+	if maxY >= r.canvasH {
+		maxY = r.canvasH - 1
+	}
+
+	r2 := radius * radius
+	for y := minY; y <= maxY; y++ {
+		for x := minX; x <= maxX; x++ {
+			dx := (float64(x) + 0.5) - cx
+			dy := (float64(y) + 0.5) - cy
+			if dx*dx+dy*dy <= r2 {
+				i := dst.PixOffset(x, y)
+				dst.Pix[i+3] = 255
+			}
+		}
+	}
+}
+
+// lonLatToLocalPx maps WGS84 lon/lat to local pixel coordinates on the current canvas.
+// It uses WebMercator math in "global pixel" space, then applies the configured offset.
+func (r *Renderer) lonLatToLocalPx(lon, lat float64) (float64, float64) {
+	n := math.Pow(2, float64(r.zoom))
+
+	// Global pixel space (at this zoom) in [0, n*tileSize)
+	globalX := (lon + 180.0) / 360.0 * n * float64(r.tileSize)
+
+	latRad := lat * math.Pi / 180.0
+	mercY := math.Log(math.Tan(math.Pi/4.0 + latRad/2.0))
+	globalY := (1.0 - mercY/math.Pi) / 2.0 * n * float64(r.tileSize)
+
+	return globalX - float64(r.offsetX), globalY - float64(r.offsetY)
+}

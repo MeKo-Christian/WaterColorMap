@@ -164,7 +164,10 @@ func isBuilding(tags map[string]string) bool {
 }
 
 func isCivic(tags map[string]string) bool {
-	return tags["amenity"] == "school" ||
-		tags["amenity"] == "hospital" ||
-		tags["amenity"] == "university"
+	amenity := tags["amenity"]
+	return amenity == "school" ||
+		amenity == "hospital" ||
+		amenity == "university" ||
+		amenity == "library" ||
+		amenity == "town_hall"
 }
