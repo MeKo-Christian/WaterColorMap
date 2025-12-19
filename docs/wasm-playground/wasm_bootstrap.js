@@ -32,7 +32,7 @@
       try {
         const result = await WebAssembly.instantiateStreaming(
           fetchWasm(url),
-          go.importObject,
+          go.importObject
         );
         return { go, instance: result.instance };
       } catch (err) {
