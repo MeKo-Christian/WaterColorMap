@@ -208,7 +208,6 @@ func scanTilesDirectory(dir string) ([]tileInfo, int, int, error) {
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, 0, 0, err
 	}

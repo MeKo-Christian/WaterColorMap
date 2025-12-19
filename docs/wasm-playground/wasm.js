@@ -164,7 +164,7 @@ class WaterColorMapPlayground {
       ? this.backendBaseUrl
       : "(not set — use ?backend=... or the Backend URL button)";
     this.updateStatus(
-      `Ready. Backend: ${backendLabel} (${this.maxConcurrency} CPUs)`
+      `Ready. Backend: ${backendLabel} (${this.maxConcurrency} CPUs)`,
     );
   }
 
@@ -231,7 +231,7 @@ class WaterColorMapPlayground {
       if (!this._missingBackendNotified) {
         this._missingBackendNotified = true;
         this.updateStatus(
-          "No backend set. Use ?backend=... (or the Backend URL button)."
+          "No backend set. Use ?backend=... (or the Backend URL button).",
         );
       }
       return;
@@ -252,7 +252,7 @@ class WaterColorMapPlayground {
     try {
       const url = this.makeTileUrl(z, x, y, is2x);
       this.updateStatus(
-        `Fetching z${z} ${x}/${y}... (${this.maxConcurrency} concurrent)`
+        `Fetching z${z} ${x}/${y}... (${this.maxConcurrency} concurrent)`,
       );
 
       let resp;
@@ -287,7 +287,7 @@ class WaterColorMapPlayground {
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
   <rect width="100%" height="100%" fill="#f5f5f5"/>
   <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#777">${String(
-    message
+    message,
   )
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -320,7 +320,7 @@ class WaterColorMapPlayground {
     document.getElementById("toggleMode").addEventListener("click", () => {
       const next = prompt(
         "Backend base URL (example: http://127.0.0.1:8080).\n\nYou can also set ?backend=... in the URL.",
-        this.backendBaseUrl
+        this.backendBaseUrl,
       );
       if (!next) return;
       this.backendBaseUrl = next.replace(/\/$/, "");

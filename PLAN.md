@@ -445,6 +445,7 @@ watercolormap generate --format=mbtiles \
 ```
 
 For HiDPI tiles, two separate files are created:
+
 - `hanover.mbtiles` (base 256px tiles)
 - `hanover@2x.mbtiles` (512px tiles)
 
@@ -465,6 +466,7 @@ watercolormap serve --mbtiles=hanover.mbtiles --port=8080
 ```
 
 MBTiles format provides:
+
 - Single file portability (no thousands of individual files)
 - Efficient storage with gzip compression
 - Standard SQLite format compatible with most map tools

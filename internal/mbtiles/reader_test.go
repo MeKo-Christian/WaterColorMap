@@ -165,7 +165,7 @@ func TestReader_InvalidDatabase(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "invalid.mbtiles")
 
 	// Create an empty file
-	if err := os.WriteFile(dbPath, []byte("not a database"), 0644); err != nil {
+	if err := os.WriteFile(dbPath, []byte("not a database"), 0o644); err != nil {
 		t.Fatalf("Failed to create invalid file: %v", err)
 	}
 
