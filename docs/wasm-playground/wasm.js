@@ -118,6 +118,7 @@ class WaterColorMapPlayground {
     this.tileLayer = null;
     this.statusEl = document.getElementById("status");
     this.backendBaseUrl = this.getInitialBackendBaseUrl();
+    this._missingBackendNotified = false;
     this.maxConcurrency = getMaxConcurrency();
     this.fetchSemaphore = new Semaphore(this.maxConcurrency);
     this.init();
@@ -131,10 +132,11 @@ class WaterColorMapPlayground {
       return fromQuery.replace(/\/$/, "");
     }
 
-    // If this page is served over HTTPS (e.g. GitHub Pages), default to same-origin
-    // to avoid HTTPS -> HTTP mixed-content blocking.
+    // If this page is served over HTTPS (e.g. GitHub Pages), do not default to an
+    // HTTP localhost backend (mixed-content) and do not guess a same-origin backend
+    // (usually no /tiles there). Require an explicit backend.
     if (window.location.protocol === "https:") {
-      return window.location.origin;
+      return "";
     }
 
     // Default to localhost for local development (HTTP).
@@ -157,8 +159,12 @@ class WaterColorMapPlayground {
 
     // Add controls
     this.setupControls();
+
+    const backendLabel = this.backendBaseUrl
+      ? this.backendBaseUrl
+      : "(not set — use ?backend=... or the Backend URL button)";
     this.updateStatus(
-      `Ready. Backend: ${this.backendBaseUrl} (${this.maxConcurrency} CPUs)`
+      `Ready. Backend: ${backendLabel} (${this.maxConcurrency} CPUs)`
     );
   }
 
@@ -220,6 +226,17 @@ class WaterColorMapPlayground {
   }
 
   async loadTileToImg({ z, x, y, is2x, img }) {
+    if (!this.backendBaseUrl) {
+      img.src = this.makePlaceholderDataUrl("No backend");
+      if (!this._missingBackendNotified) {
+        this._missingBackendNotified = true;
+        this.updateStatus(
+          "No backend set. Use ?backend=... (or the Backend URL button)."
+        );
+      }
+      return;
+    }
+
     // Cache-first
     const cached = await this.cache.get(z, x, y, is2x);
     if (cached) {

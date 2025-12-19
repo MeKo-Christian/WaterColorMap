@@ -35,3 +35,15 @@ The playground fetches tiles from the backend and caches them in IndexedDB.
 You can override the backend base URL by opening:
 
 `/wasm-playground/?backend=http://127.0.0.1:8080`
+
+## GitHub Pages note (HTTPS)
+
+GitHub Pages serves this playground over HTTPS.
+
+- Browsers block HTTPS pages from fetching tiles from an HTTP backend (e.g. `http://127.0.0.1:8080`) due to mixed-content rules.
+- For this reason, the playground does **not** default to any backend on HTTPS — you must set it explicitly (via `?backend=...` or the “Backend URL” button).
+
+Recommended local workflow:
+
+- Run `./bin/watercolormap serve --addr 127.0.0.1:8080`
+- Run `just build-wasm-local` and open `http://localhost:8000/wasm-playground/` (HTTP)

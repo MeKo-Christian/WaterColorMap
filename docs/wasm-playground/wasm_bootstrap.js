@@ -22,12 +22,16 @@
   async function instantiateGoWasm(url) {
     const go = new Go();
 
+    // Prevent stale caching (especially on GitHub Pages) when updating wasm.wasm.
+    // This keeps iteration smoother without requiring users to hard-refresh.
+    const fetchWasm = (u) => fetch(u, { cache: "no-store" });
+
     // GitHub Pages typically serves .wasm with application/wasm, but local servers
     // might not; we fall back to ArrayBuffer instantiation.
     if (WebAssembly.instantiateStreaming) {
       try {
         const result = await WebAssembly.instantiateStreaming(
-          fetch(url),
+          fetchWasm(url),
           go.importObject,
         );
         return { go, instance: result.instance };
@@ -36,7 +40,7 @@
       }
     }
 
-    const resp = await fetch(url);
+    const resp = await fetchWasm(url);
     const bytes = await resp.arrayBuffer();
     const result = await WebAssembly.instantiate(bytes, go.importObject);
     return { go, instance: result.instance };
