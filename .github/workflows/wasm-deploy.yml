@@ -5,11 +5,15 @@ on:
     branches:
       - main
     paths:
-      - 'cmd/wasm/**'
-      - 'docs/wasm-playground/**'
-      - 'internal/**'
-      - '.github/workflows/wasm-deploy.yml'
+      - cmd/wasm/**
+      - cmd/watercolormap/**
+      - docs/wasm-playground/**
+      - internal/**
+      - assets/**
+      - .github/workflows/wasm-deploy.yml
   workflow_dispatch:
+  schedule:
+    - cron: 0 2 * * 0  # Weekly on Sunday at 2 AM UTC
 
 permissions:
   contents: read
@@ -38,6 +42,42 @@ jobs:
           mkdir -p docs/wasm-playground
           GOOS=js GOARCH=wasm go build -o docs/wasm-playground/wasm.wasm ./cmd/wasm
           bash scripts/copy-wasm-exec.sh
+
+      - name: Install Mapnik dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libmapnik-dev \
+            mapnik-utils \
+            libboost-all-dev \
+            libicu-dev \
+            python3-mapnik
+
+      - name: Build watercolormap binary
+        run: |
+          go build -o ./bin/watercolormap ./cmd/watercolormap
+
+      - name: Generate static tiles
+        run: |
+          ./bin/watercolormap generate \
+            --bbox "9.60,52.30,9.90,52.50" \
+            --zoom-min 13 \
+            --zoom-max 14 \
+            --output-dir docs/wasm-playground/static-tiles \
+            --folder-structure nested \
+            --format folder \
+            --workers 4 \
+            --seed 1337 \
+            --png-compression best \
+            --progress true
+
+      - name: List generated tiles
+        run: |
+          echo "Generated tiles:"
+          find docs/wasm-playground/static-tiles -type f -name "*.png" | head -20
+          echo ""
+          echo "Total tiles:"
+          find docs/wasm-playground/static-tiles -type f -name "*.png" | wc -l
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
