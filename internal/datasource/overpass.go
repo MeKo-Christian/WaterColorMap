@@ -12,7 +12,8 @@ import (
 
 // OverpassDataSource fetches OSM data from Overpass API
 type OverpassDataSource struct {
-	client overpass.Client
+	client             overpass.Client
+	storeRawResponse   bool // If true, stores raw Overpass response in TileData (for debugging)
 }
 
 // NewOverpassDataSource creates a new Overpass data source
@@ -29,8 +30,16 @@ func NewOverpassDataSource(endpoint string) *OverpassDataSource {
 	)
 
 	return &OverpassDataSource{
-		client: client,
+		client:           client,
+		storeRawResponse: false, // Don't store raw response by default (saves memory)
 	}
+}
+
+// WithRawResponseStorage enables storing the raw Overpass API response in TileData.
+// This is useful for debugging but increases memory usage. Should only be used in tests.
+func (ds *OverpassDataSource) WithRawResponseStorage(enabled bool) *OverpassDataSource {
+	ds.storeRawResponse = enabled
+	return ds
 }
 
 // FetchTileData fetches all OSM features for a tile
@@ -54,13 +63,20 @@ func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile 
 	// Convert to feature collection
 	features := ExtractFeaturesFromOverpassResult(&result)
 
-	return &types.TileData{
+	tileData := &types.TileData{
 		Coordinate: tile,
 		Bounds:     bounds,
 		Features:   features,
 		FetchedAt:  time.Now(),
 		Source:     "overpass-api",
-	}, nil
+	}
+
+	// Only store raw response if explicitly requested (for debugging/tests)
+	if ds.storeRawResponse {
+		tileData.OverpassResult = &result
+	}
+
+	return tileData, nil
 }
 
 // buildTileQuery creates a comprehensive Overpass QL query for tile features.

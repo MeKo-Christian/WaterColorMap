@@ -3,6 +3,7 @@ package types
 import (
 	"time"
 
+	"github.com/MeKo-Christian/go-overpass"
 	"github.com/paulmach/orb"
 )
 
@@ -45,6 +46,12 @@ type TileData struct {
 	Features   FeatureCollection
 	Bounds     BoundingBox
 	Coordinate TileCoordinate
+
+	// OverpassResult stores the raw Overpass API response for debugging purposes.
+	// This is nil by default to save memory in production. To enable, call
+	// WithRawResponseStorage(true) on the OverpassDataSource.
+	// Only use in tests or debugging scenarios.
+	OverpassResult *overpass.Result
 }
 
 // Count returns the total number of features
