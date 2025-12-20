@@ -521,57 +521,81 @@ func isWaterElement(tags map[string]string) bool {
 	return false
 }
 
-// extractWaterElements creates a filtered copy of Overpass result containing only water elements.
-// This significantly reduces file size by excluding non-water ways, relations, and unused nodes.
+// extractWaterElements creates a minimal, clean representation of water elements.
+// Only includes essential geometry data (coordinates and tags), excluding metadata.
 func extractWaterElements(result *overpass.Result) map[string]interface{} {
 	if result == nil {
 		return nil
 	}
 
-	waterWays := make(map[string]interface{})
-	waterRelations := make(map[string]interface{})
-	neededNodeIDs := make(map[int64]bool)
+	waterWays := make([]map[string]interface{}, 0)
+	waterRelations := make([]map[string]interface{}, 0)
 
-	// Extract water ways and collect referenced node IDs
+	// Extract water ways with minimal data
 	for id, way := range result.Ways {
 		if isWaterElement(way.Tags) {
-			waterWays[fmt.Sprintf("%d", id)] = way
-			// Collect node IDs used by this way
-			for _, node := range way.Nodes {
-				if node != nil {
-					neededNodeIDs[node.ID] = true
-				}
+			// Extract only coordinates from geometry
+			coords := make([][2]float64, 0, len(way.Geometry))
+			for _, point := range way.Geometry {
+				coords = append(coords, [2]float64{point.Lon, point.Lat})
 			}
+
+			wayData := map[string]interface{}{
+				"id":       id,
+				"tags":     way.Tags,
+				"geometry": coords,
+			}
+			waterWays = append(waterWays, wayData)
 		}
 	}
 
-	// Extract water relations and collect referenced member IDs
+	// Extract water relations with minimal data
 	for id, relation := range result.Relations {
 		if isWaterElement(relation.Tags) {
-			waterRelations[fmt.Sprintf("%d", id)] = relation
-			// Note: Relations may reference ways or nodes, but for JSON debugging
-			// we don't need to deeply traverse all members
-		}
-	}
+			// For relations, we need member info
+			members := make([]map[string]interface{}, 0, len(relation.Members))
+			for _, member := range relation.Members {
+				memberData := map[string]interface{}{
+					"type": string(member.Type),
+					"role": member.Role,
+				}
 
-	// Extract only the nodes that are actually used by water ways
-	waterNodes := make(map[string]interface{})
-	for nodeID := range neededNodeIDs {
-		if node, ok := result.Nodes[nodeID]; ok {
-			waterNodes[fmt.Sprintf("%d", nodeID)] = node
+				// Get ID and geometry based on member type
+				if member.Way != nil {
+					memberData["ref"] = member.Way.ID
+					if len(member.Way.Geometry) > 0 {
+						coords := make([][2]float64, 0, len(member.Way.Geometry))
+						for _, point := range member.Way.Geometry {
+							coords = append(coords, [2]float64{point.Lon, point.Lat})
+						}
+						memberData["geometry"] = coords
+					}
+				} else if member.Node != nil {
+					memberData["ref"] = member.Node.ID
+					memberData["geometry"] = [2]float64{member.Node.Lon, member.Node.Lat}
+				} else if member.Relation != nil {
+					memberData["ref"] = member.Relation.ID
+				}
+
+				members = append(members, memberData)
+			}
+
+			relationData := map[string]interface{}{
+				"id":      id,
+				"tags":    relation.Tags,
+				"members": members,
+			}
+			waterRelations = append(waterRelations, relationData)
 		}
 	}
 
 	return map[string]interface{}{
-		"timestamp": result.Timestamp,
-		"count":     len(waterWays) + len(waterRelations),
-		"nodes":     waterNodes,
+		"timestamp": result.Timestamp.Format(time.RFC3339),
 		"ways":      waterWays,
 		"relations": waterRelations,
 		"summary": map[string]int{
 			"water_ways":      len(waterWays),
 			"water_relations": len(waterRelations),
-			"water_nodes":     len(waterNodes),
 			"total_in_tile":   len(result.Ways) + len(result.Relations),
 		},
 	}
