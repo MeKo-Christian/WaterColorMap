@@ -41,6 +41,7 @@ func init() {
 	generateCmd.Flags().Int("zoom-max", 0, "Maximum zoom level for batch generation")
 	generateCmd.Flags().IntP("workers", "w", 0, "Number of parallel workers (default: number of CPUs)")
 	generateCmd.Flags().Bool("progress", true, "Show progress bar during batch generation")
+	generateCmd.Flags().Bool("allow-failures", false, "Continue generation even if some tiles fail (useful for CI/CD with API rate limits)")
 
 	// Common flags
 	generateCmd.Flags().Bool("force", false, "Force regeneration even if tile exists")
@@ -67,6 +68,7 @@ func init() {
 		{"generate.zoom_max", "zoom-max"},
 		{"generate.workers", "workers"},
 		{"generate.progress", "progress"},
+		{"generate.allow_failures", "allow-failures"},
 		{"generate.force", "force"},
 		{"generate.tile_size", "tile-size"},
 		{"generate.hidpi", "hidpi"},
@@ -131,9 +133,11 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	allowFailures := viper.GetBool("generate.allow_failures")
+
 	// Determine mode: batch (bbox provided) or single tile
 	if bbox != "" {
-		return runBatchGenerate(bbox, zoomMin, zoomMax, workers, showProgress, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers, format, outputFile, folderStructure)
+		return runBatchGenerate(bbox, zoomMin, zoomMax, workers, showProgress, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers, format, outputFile, folderStructure, allowFailures)
 	}
 
 	return runSingleGenerate(zoom, x, y, force, outputDir, dataSourceName, tileSize, hidpi, pngCompression, seed, keepLayers, folderStructure)
@@ -206,7 +210,7 @@ func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName str
 	return nil
 }
 
-func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgress, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool, format, outputFile, folderStructure string) error {
+func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgress, force bool, outputDir, dataSourceName string, tileSize int, hidpi bool, pngCompression string, seed int64, keepLayers bool, format, outputFile, folderStructure string, allowFailures bool) error {
 	// Parse bounding box
 	bbox, err := parseBBox(bboxStr)
 	if err != nil {
@@ -366,7 +370,11 @@ func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgres
 	logger.Info(progress.Summary())
 
 	if failedCount > 0 {
-		return fmt.Errorf("%d base tiles failed to generate", failedCount)
+		if allowFailures {
+			logger.Warn("Some tiles failed to generate, but continuing due to --allow-failures flag", "failed_count", failedCount)
+		} else {
+			return fmt.Errorf("%d base tiles failed to generate", failedCount)
+		}
 	}
 
 	// Generate HiDPI tiles if requested
@@ -424,7 +432,11 @@ func runBatchGenerate(bboxStr string, zoomMin, zoomMax, workers int, showProgres
 		logger.Info(progressHiDPI.Summary())
 
 		if hidpiFailedCount > 0 {
-			return fmt.Errorf("%d HiDPI tiles failed to generate", hidpiFailedCount)
+			if allowFailures {
+				logger.Warn("Some HiDPI tiles failed to generate, but continuing due to --allow-failures flag", "failed_count", hidpiFailedCount)
+			} else {
+				return fmt.Errorf("%d HiDPI tiles failed to generate", hidpiFailedCount)
+			}
 		}
 	}
 

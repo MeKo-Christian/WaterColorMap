@@ -69,7 +69,8 @@ jobs:
             --workers 4 \
             --seed 1337 \
             --png-compression best \
-            --progress true
+            --progress true \
+            --allow-failures
 
       - name: List generated tiles
         run: |
