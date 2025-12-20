@@ -76,7 +76,7 @@ class WaterColorMapPlayground {
     this.tileLayer.addTo(this.map);
 
     this.updateStatus(
-      `Ready. In-browser rendering via Overpass (API limit: 2, Render limit: ${this.maxConcurrency})`
+      `Ready. In-browser rendering via Overpass (API limit: 2, Render limit: ${this.maxConcurrency})`,
     );
   }
 
@@ -135,8 +135,8 @@ class WaterColorMapPlayground {
             const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
             this.updateStatus(
               `Overpass busy (${resp.status}), retrying in ${Math.round(
-                delay
-              )}ms... (attempt ${retryCount}/${maxRetries})`
+                delay,
+              )}ms... (attempt ${retryCount}/${maxRetries})`,
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
             continue;
@@ -153,7 +153,7 @@ class WaterColorMapPlayground {
           retryCount++;
           const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
           this.updateStatus(
-            `Overpass connection error, retrying in ${Math.round(delay)}ms...`
+            `Overpass connection error, retrying in ${Math.round(delay)}ms...`,
           );
           await new Promise((resolve) => setTimeout(resolve, delay));
           continue;
@@ -224,12 +224,12 @@ class WaterColorMapPlayground {
       this.updateStatus(`Rendering z${z} ${x}/${y}...`);
       const rendered = watercolorRenderTileFromOverpassJSON(
         JSON.stringify(req),
-        overpassJSON
+        overpassJSON,
       );
 
       if (!rendered || !rendered.pngBase64) {
         throw new Error(
-          rendered && rendered.error ? rendered.error : "render failed"
+          rendered && rendered.error ? rendered.error : "render failed",
         );
       }
 
@@ -252,7 +252,7 @@ class WaterColorMapPlayground {
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256">
   <rect width="100%" height="100%" fill="#f5f5f5"/>
   <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#777">${String(
-    message
+    message,
   )
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

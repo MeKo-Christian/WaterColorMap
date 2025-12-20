@@ -12,8 +12,8 @@ import (
 
 // OverpassDataSource fetches OSM data from Overpass API
 type OverpassDataSource struct {
-	client             overpass.Client
-	storeRawResponse   bool // If true, stores raw Overpass response in TileData (for debugging)
+	client           overpass.Client
+	storeRawResponse bool // If true, stores raw Overpass response in TileData (for debugging)
 }
 
 // NewOverpassDataSource creates a new Overpass data source
