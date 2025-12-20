@@ -5,16 +5,16 @@ import "fmt"
 
 // Metadata contains MBTiles metadata fields.
 type Metadata struct {
-	Name        string     // Human-readable tileset identifier
-	Format      string     // Tile data type (png, jpg, webp, pbf)
-	MinZoom     int        // Minimum zoom level
-	MaxZoom     int        // Maximum zoom level
-	Bounds      [4]float64 // WGS:84 extent [minLon, minLat, maxLon, maxLat]
-	Center      [3]float64 // Default map center [lon, lat, zoom]
-	Attribution string     // Attribution text
-	Description string     // Human-readable description
-	Type        string     // "baselayer" or "overlay"
-	Version     string     // Version string
+	Name        string // Human-readable tileset identifier
+	Format      string // Tile data type (png, jpg, webp, pbf)
+	Attribution string // Attribution text
+	Description string // Human-readable description
+	Type        string // "baselayer" or "overlay"
+	Version     string // Version string
+	Bounds      [4]float64
+	Center      [3]float64
+	MinZoom     int // Minimum zoom level
+	MaxZoom     int // Maximum zoom level
 }
 
 // ToMap converts Metadata to a map for database insertion.

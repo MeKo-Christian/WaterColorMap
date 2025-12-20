@@ -17,33 +17,27 @@ import (
 )
 
 type OnDemandTilesConfig struct {
-	TilesDir string
-
-	StylesDir   string
-	TexturesDir string
-
-	BaseTileSize int
-	Seed         int64
-	KeepLayers   bool
-
-	PNGCompression string
-
-	GenerateMissing          bool
-	DisableCache             bool // if true: always regenerate (still writes to disk)
+	TilesDir                 string
+	StylesDir                string
+	TexturesDir              string
+	PNGCompression           string
+	CacheControl             string
+	BaseTileSize             int
+	Seed                     int64
 	MaxConcurrentGenerations int
 	GenerationTimeout        time.Duration
-
-	CacheControl string
+	KeepLayers               bool
+	GenerateMissing          bool
+	DisableCache             bool
 }
 
 type OnDemandTiles struct {
 	ds     pipeline.DataSource
-	cfg    OnDemandTilesConfig
 	logger *slog.Logger
-
-	locks sync.Map // map[string]*sync.Mutex
-	gens  sync.Map // map[int]*pipeline.Generator
-	sem   chan struct{}
+	sem    chan struct{}
+	locks  sync.Map
+	gens   sync.Map
+	cfg    OnDemandTilesConfig
 }
 
 func NewOnDemandTiles(ds pipeline.DataSource, cfg OnDemandTilesConfig, logger *slog.Logger) (*OnDemandTiles, error) {

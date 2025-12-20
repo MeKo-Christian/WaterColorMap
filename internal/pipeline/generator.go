@@ -55,12 +55,12 @@ type Generator struct {
 	ds         DataSource
 	textures   map[geojson.LayerType]image.Image
 	logger     *slog.Logger
+	options    GeneratorOptions
 	stylesDir  string
 	outputDir  string
 	tileSize   int
 	seed       int64
 	keepLayers bool
-	options    GeneratorOptions
 }
 
 // NewGenerator loads textures and prepares a generator.

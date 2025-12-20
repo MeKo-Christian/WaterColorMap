@@ -6,10 +6,11 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	_ "image/png" // Register PNG decoder
 
 	"github.com/MeKo-Tech/watercolormap/assets"
 	"github.com/MeKo-Tech/watercolormap/internal/geojson"
+
+	_ "image/png" // Register PNG decoder
 )
 
 // LoadEmbeddedDefaultTextures loads the default watercolor textures from the repo's

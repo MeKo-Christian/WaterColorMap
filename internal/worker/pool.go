@@ -17,16 +17,16 @@ type Generator interface {
 
 // Task represents a single tile generation task.
 type Task struct {
+	Suffix string
 	Coords tile.Coords
 	Force  bool
-	Suffix string
 }
 
 // Result represents the outcome of a tile generation task.
 type Result struct {
-	Task    Task
-	Path    string
 	Err     error
+	Path    string
+	Task    Task
 	Elapsed time.Duration
 }
 
@@ -35,16 +35,16 @@ type ProgressFunc func(completed, total, failed int)
 
 // Config configures the worker pool.
 type Config struct {
-	Workers    int
 	Generator  Generator
 	OnProgress ProgressFunc
+	Workers    int
 }
 
 // Pool manages parallel tile generation.
 type Pool struct {
-	workers    int
 	generator  Generator
 	onProgress ProgressFunc
+	workers    int
 }
 
 // New creates a new worker pool.

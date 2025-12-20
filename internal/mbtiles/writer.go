@@ -17,20 +17,20 @@ const (
 
 // TileEntry represents a single tile to be written.
 type TileEntry struct {
+	Data []byte // PNG data (will be gzip-compressed before storage)
 	Z    int
 	X    int
 	Y    int
-	Data []byte // PNG data (will be gzip-compressed before storage)
 }
 
 // Writer writes tiles to an MBTiles database.
 type Writer struct {
 	db        *sql.DB
 	path      string
-	mu        sync.Mutex
 	batch     []TileEntry
-	batchSize int
 	metadata  Metadata
+	batchSize int
+	mu        sync.Mutex
 }
 
 // New creates a new MBTiles writer.

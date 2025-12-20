@@ -157,8 +157,10 @@ func runConvert(cmd *cobra.Command, args []string) error {
 }
 
 type tileInfo struct {
-	z, x, y int
-	path    string
+	path string
+	z    int
+	x    int
+	y    int
 }
 
 // scanTilesDirectory scans a directory for tile files and returns tile info.

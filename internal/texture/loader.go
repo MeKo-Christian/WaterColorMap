@@ -3,11 +3,12 @@ package texture
 import (
 	"fmt"
 	"image"
-	_ "image/png" // Register PNG decoder
 	"os"
 	"path/filepath"
 
 	"github.com/MeKo-Tech/watercolormap/internal/geojson"
+
+	_ "image/png" // Register PNG decoder
 )
 
 // LoadDefaultTextures loads the default textures for all watercolor layers from the given directory.

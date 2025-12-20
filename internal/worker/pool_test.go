@@ -12,8 +12,8 @@ import (
 
 // mockGenerator simulates tile generation for testing
 type mockGenerator struct {
+	failTiles map[string]bool
 	delay     time.Duration
-	failTiles map[string]bool // tiles that should fail
 	callCount atomic.Int32
 }
 

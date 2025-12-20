@@ -34,16 +34,24 @@ includes = ["*.toml"]
 
 ### Go
 
-[formatter.gofumpt]
-command = "gofumpt"
-options = ["-w"]
-includes = ["*.go"]
-
 [formatter.gci]
 command = "gci"
-options = ["-w"]
+options = [
+  "write",
+  "--skip-generated",
+  "-s",
+  "standard",
+  "-s",
+  "default",
+  "-s",
+  "prefix(github.com/MeKo-Tech/WaterColorMap)",
+  "-s",
+  "blank",
+]
 includes = ["*.go"]
-priority = 1        # run after gofumpt
+
+# Note: gofumpt removed to avoid conflicts with gci import formatting
+# gci handles import organization, gofmt (via golangci-lint) handles code formatting
 
 ### Shell
 

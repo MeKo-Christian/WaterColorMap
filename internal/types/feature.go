@@ -41,17 +41,12 @@ type FeatureCollection struct {
 
 // TileData represents all data for a single tile
 type TileData struct {
-	FetchedAt  time.Time
-	Source     string
-	Features   FeatureCollection
-	Bounds     BoundingBox
-	Coordinate TileCoordinate
-
-	// OverpassResult stores the raw Overpass API response for debugging purposes.
-	// This is nil by default to save memory in production. To enable, call
-	// WithRawResponseStorage(true) on the OverpassDataSource.
-	// Only use in tests or debugging scenarios.
+	FetchedAt      time.Time
 	OverpassResult *overpass.Result
+	Source         string
+	Features       FeatureCollection
+	Bounds         BoundingBox
+	Coordinate     TileCoordinate
 }
 
 // Count returns the total number of features

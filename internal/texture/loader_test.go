@@ -2,10 +2,11 @@ package texture
 
 import (
 	"image"
-	_ "image/png" // Register PNG decoder
 	"os"
 	"path/filepath"
 	"testing"
+
+	_ "image/png" // Register PNG decoder
 )
 
 func TestLoadPNGTextures(t *testing.T) {

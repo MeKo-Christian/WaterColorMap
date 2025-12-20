@@ -11,7 +11,6 @@ import (
 	"image"
 	"image/png"
 	"strings"
-	"syscall/js"
 	"time"
 
 	"github.com/MeKo-Tech/watercolormap/internal/composite"
@@ -22,6 +21,7 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/texture"
 	"github.com/MeKo-Tech/watercolormap/internal/types"
 	"github.com/MeKo-Tech/watercolormap/internal/watercolor"
+	"syscall/js"
 )
 
 const defaultConcurrency = 4

@@ -130,14 +130,14 @@ func TestProgress_Callback(t *testing.T) {
 
 func TestFormatDuration(t *testing.T) {
 	tests := []struct {
-		duration time.Duration
 		expected string
+		duration time.Duration
 	}{
-		{30 * time.Second, "30s"},
-		{90 * time.Second, "1m30s"},
-		{5 * time.Minute, "5m0s"},
-		{65 * time.Minute, "1h5m"},
-		{2*time.Hour + 30*time.Minute, "2h30m"},
+		{duration: 30 * time.Second, expected: "30s"},
+		{duration: 90 * time.Second, expected: "1m30s"},
+		{duration: 5 * time.Minute, expected: "5m0s"},
+		{duration: 65 * time.Minute, expected: "1h5m"},
+		{duration: 2*time.Hour + 30*time.Minute, expected: "2h30m"},
 	}
 
 	for _, tt := range tests {

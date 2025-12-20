@@ -11,12 +11,12 @@ import (
 
 // Progress tracks and displays tile generation progress.
 type Progress struct {
+	startTime time.Time
+	output    io.Writer
 	total     int
 	completed int
 	failed    int
-	startTime time.Time
 	mu        sync.RWMutex
-	output    io.Writer
 	enabled   bool
 }
 
