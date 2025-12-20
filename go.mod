@@ -3,7 +3,7 @@ module github.com/MeKo-Tech/watercolormap
 go 1.25.0
 
 require (
-	github.com/MeKo-Christian/go-overpass v0.0.0-20251215140656-c8487ded5547
+	github.com/MeKo-Christian/go-overpass v0.0.0-20251220122618-2dfca379d0cd
 	github.com/aquilax/go-perlin v1.1.0
 	github.com/disintegration/gift v1.2.1
 	github.com/omniscale/go-mapnik/v2 v2.0.1

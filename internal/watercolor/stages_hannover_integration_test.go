@@ -126,7 +126,7 @@ func TestWatercolorStagesGolden_HannoverRealTile(t *testing.T) {
 
 		// Save water-only subset of Overpass API response for debugging (to reduce file size)
 		if tileData.OverpassResult != nil {
-			waterOnlyResult := extractWaterElements(tileData.OverpassResult)
+			waterOnlyResult := extractWaterElementsMinimal(tileData.OverpassResult)
 			overpassJSON, err := json.MarshalIndent(waterOnlyResult, "", "  ")
 			if err != nil {
 				t.Fatalf("failed to marshal Overpass result for %s: %v", caseName, err)
@@ -521,9 +521,10 @@ func isWaterElement(tags map[string]string) bool {
 	return false
 }
 
-// extractWaterElements creates a minimal, clean representation of water elements.
+// extractWaterElementsMinimal creates a minimal, clean representation of water elements.
 // Only includes essential geometry data (coordinates and tags), excluding metadata.
-func extractWaterElements(result *overpass.Result) map[string]interface{} {
+// With go-overpass JSON tags updated to use omitempty, the output is now very clean.
+func extractWaterElementsMinimal(result *overpass.Result) map[string]interface{} {
 	if result == nil {
 		return nil
 	}
