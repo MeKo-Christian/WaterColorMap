@@ -1,0 +1,105 @@
+name: Build and Release CLI
+
+on:
+  release:
+    types:
+      - created
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+(-.*)?"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          # Linux
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            binary_name: watercolormap
+            asset_name: watercolormap-linux-amd64
+          - os: linux
+            arch: arm64
+            runner: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            binary_name: watercolormap
+            asset_name: watercolormap-linux-arm64
+
+          # macOS
+          - os: macos
+            arch: amd64
+            runner: macos-latest
+            goos: darwin
+            goarch: amd64
+            binary_name: watercolormap
+            asset_name: watercolormap-darwin-amd64
+          - os: macos
+            arch: arm64
+            runner: macos-latest
+            goos: darwin
+            goarch: arm64
+            binary_name: watercolormap
+            asset_name: watercolormap-darwin-arm64
+
+          # Windows
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+            goos: windows
+            goarch: amd64
+            binary_name: watercolormap.exe
+            asset_name: watercolormap-windows-amd64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Install Mapnik dependencies (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libmapnik-dev \
+            mapnik-utils \
+            libboost-all-dev \
+            libicu-dev \
+            python3-mapnik
+
+      - name: Install Mapnik dependencies (macOS)
+        if: matrix.os == 'macos'
+        run: |
+          brew install mapnik boost icu4c pkg-config
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/opt/icu4c/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 1
+        run: |
+          go build -o ${{ matrix.binary_name }} -ldflags="-s -w" ./cmd/watercolormap
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./${{ matrix.binary_name }}
+          asset_name: ${{ matrix.asset_name }}
+          asset_content_type: application/octet-stream
