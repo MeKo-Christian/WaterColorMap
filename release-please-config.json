@@ -1,0 +1,9 @@
+{
+  "release-type": "simple",
+  "initial-version": "0.1.0",
+  "packages": {
+    ".": {
+      "include-component-in-tag": false
+    }
+  }
+}

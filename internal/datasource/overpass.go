@@ -83,6 +83,10 @@ func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile 
 // It fetches complete geometry for all ways that intersect the bounding box,
 // not just the portions within the bbox. This prevents polygon clipping artifacts
 // at tile boundaries.
+//
+// Uses "out geom qt;" for minimal response size:
+// - "geom" returns complete geometry (not clipped to bbox)
+// - "qt" (quiet) omits metadata (version, changeset, timestamp, user, uid)
 func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
 	// Build query with all feature types we need.
 	// IMPORTANT: We use per-element bbox filters (south,west,north,east) instead of
@@ -110,7 +114,7 @@ func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
   way["amenity"="hospital"](%s);
   way["amenity"="university"](%s);
 );
-out geom;
+out geom qt;
 `, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox)
 }
 
