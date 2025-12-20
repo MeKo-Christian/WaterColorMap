@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Map background-color="#00000000" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
+
+  <!-- Buildings Layer Style -->
+  <!-- Renders individual buildings in darker lilac (#A060A0) for mask extraction -->
+  <!-- Buildings appear on top of civic areas to create two-tone lavender effect -->
+
+  <Style name="buildings">
+    <Rule>
+      <!-- Individual buildings (darker lavender) -->
+      <PolygonSymbolizer fill="#A060A0" clip="false" />
+    </Rule>
+  </Style>
+
+  <!-- Data Layer -->
+  <Layer name="buildings" srs="+proj=longlat +datum=WGS84 +no_defs">
+    <StyleName>buildings</StyleName>
+    <Datasource>
+      <Parameter name="type">ogr</Parameter>
+      <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>
+      <Parameter name="layer">LAYER_PLACEHOLDER</Parameter>
+    </Datasource>
+  </Layer>
+
+</Map>

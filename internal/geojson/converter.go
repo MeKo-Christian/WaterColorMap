@@ -12,13 +12,14 @@ import (
 type LayerType string
 
 const (
-	LayerWater    LayerType = "water"
-	LayerLand     LayerType = "land"
-	LayerParks    LayerType = "parks"
-	LayerCivic    LayerType = "civic"
-	LayerRoads    LayerType = "roads"
-	LayerHighways LayerType = "highways"
-	LayerPaper    LayerType = "paper"
+	LayerWater     LayerType = "water"
+	LayerLand      LayerType = "land"
+	LayerParks     LayerType = "parks"
+	LayerCivic     LayerType = "civic"     // Civic areas (lighter lavender)
+	LayerBuildings LayerType = "buildings" // Buildings (darker lavender)
+	LayerRoads     LayerType = "roads"
+	LayerHighways  LayerType = "highways"
+	LayerPaper     LayerType = "paper"
 )
 
 // ToGeoJSON converts a slice of features to GeoJSON FeatureCollection
@@ -81,11 +82,11 @@ func GetLayerFeatures(fc types.FeatureCollection, layer LayerType) []types.Featu
 	case LayerParks:
 		return fc.Parks
 	case LayerCivic:
-		// Combine civic and buildings for the civic layer
-		combined := make([]types.Feature, 0, len(fc.Civic)+len(fc.Buildings))
-		combined = append(combined, fc.Civic...)
-		combined = append(combined, fc.Buildings...)
-		return combined
+		// Return only civic areas (not buildings)
+		return fc.Civic
+	case LayerBuildings:
+		// Return only buildings
+		return fc.Buildings
 	case LayerRoads:
 		return fc.Roads
 	case LayerHighways:

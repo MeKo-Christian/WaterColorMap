@@ -30,36 +30,36 @@
       <Filter>[highway] = 'motorway' or [highway] = 'motorway_link' or [highway] = 'trunk' or [highway] = 'trunk_link'</Filter>
       <MaxScaleDenominator>150000</MaxScaleDenominator>
       <MinScaleDenominator>50000</MinScaleDenominator>
-      <LineSymbolizer stroke="#FFFF00" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" />
+      <LineSymbolizer stroke="#FFFF00" stroke-width="6.0" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
       <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
       <MaxScaleDenominator>150000</MaxScaleDenominator>
       <MinScaleDenominator>50000</MinScaleDenominator>
-      <LineSymbolizer stroke="#FFFF00" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+      <LineSymbolizer stroke="#FFFF00" stroke-width="5.0" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
       <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
       <MaxScaleDenominator>150000</MaxScaleDenominator>
       <MinScaleDenominator>50000</MinScaleDenominator>
-      <LineSymbolizer stroke="#FFFF00" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" />
+      <LineSymbolizer stroke="#FFFF00" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
 
     <!-- High zoom (z14+) -->
     <Rule>
       <Filter>[highway] = 'motorway' or [highway] = 'motorway_link' or [highway] = 'trunk' or [highway] = 'trunk_link'</Filter>
       <MaxScaleDenominator>50000</MaxScaleDenominator>
-      <LineSymbolizer stroke="#FFFF00" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" />
+      <LineSymbolizer stroke="#FFFF00" stroke-width="7.0" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
       <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
       <MaxScaleDenominator>50000</MaxScaleDenominator>
-      <LineSymbolizer stroke="#FFFF00" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round" />
+      <LineSymbolizer stroke="#FFFF00" stroke-width="6.0" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
       <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
       <MaxScaleDenominator>50000</MaxScaleDenominator>
-      <LineSymbolizer stroke="#FFFF00" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
+      <LineSymbolizer stroke="#FFFF00" stroke-width="5.2" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
   </Style>
 

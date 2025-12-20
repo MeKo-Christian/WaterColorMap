@@ -42,16 +42,31 @@ type Params struct {
 	Threshold      uint8
 }
 
+// ZoomAdjustedBlurSigma returns blur sigma adjusted for zoom level.
+// Higher zoom levels (more detail) get sharper edges (less blur).
+// baseBlurSigma is the blur at zoom 13; sigma decreases at higher zooms.
+func ZoomAdjustedBlurSigma(baseBlurSigma float32, zoom int) float32 {
+	// At zoom 10-11: use base * 1.4 (softer for overview)
+	// At zoom 12-13: use base (reference level)
+	// At zoom 14+: use base * 0.7 (sharper for detail)
+	if zoom <= 11 {
+		return baseBlurSigma * 1.4
+	} else if zoom >= 14 {
+		return baseBlurSigma * 0.7
+	}
+	return baseBlurSigma
+}
+
 // DefaultParams returns sensible defaults for the watercolor pipeline.
 // textures provides base textures per layer; caller may omit entries for layers they won't process.
 func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]image.Image) Params {
 	return Params{
 		TileSize:       tileSize,
-		BlurSigma:      1.8,
+		BlurSigma:      1.2,  // Reduced from 1.8 for sharper edges
 		NoiseScale:     30.0,
 		NoiseStrength:  0.28,
 		Threshold:      128,
-		AntialiasSigma: 0.6,
+		AntialiasSigma: 0.5, // Reduced from 0.6 for crisper edges
 		Seed:           seed,
 		Styles: map[geojson.LayerType]LayerStyle{
 			geojson.LayerLand: {
@@ -96,14 +111,14 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 			geojson.LayerRoads: {
 				Layer:             geojson.LayerRoads,
 				Texture:           textures[geojson.LayerRoads],
-				Tint:              color.NRGBA{R: 230, G: 170, B: 110, A: 255},
-				TintStrength:      0.35,
+				Tint:              color.NRGBA{R: 245, G: 180, B: 100, A: 255}, // More saturated orange
+				TintStrength:      0.55,                                        // Increased from 0.35 for bolder color
 				MaskBlurSigma:     1.4,
 				MaskNoiseStrength: 0.25,
 				ShadeSigma:        0,
 				ShadeStrength:     0,
-				EdgeColor:         color.NRGBA{R: 160, G: 100, B: 60, A: 255},
-				EdgeStrength:      0.55,
+				EdgeColor:         color.NRGBA{R: 180, G: 110, B: 50, A: 255}, // Darker edge for definition
+				EdgeStrength:      0.65,                                       // Increased from 0.55
 				EdgeInnerSigma:    0.6,
 				EdgeOuterSigma:    1.5,
 				EdgeGamma:         1.1,
@@ -111,14 +126,14 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 			geojson.LayerHighways: {
 				Layer:             geojson.LayerHighways,
 				Texture:           textures[geojson.LayerHighways],
-				Tint:              color.NRGBA{R: 255, G: 230, B: 140, A: 255},
-				TintStrength:      0.15,
+				Tint:              color.NRGBA{R: 255, G: 200, B: 80, A: 255}, // More saturated yellow-orange
+				TintStrength:      0.50,                                       // Increased from 0.15 for much bolder color
 				MaskBlurSigma:     1.1,
 				MaskNoiseStrength: 0.18,
 				ShadeSigma:        0,
 				ShadeStrength:     0,
-				EdgeColor:         color.NRGBA{R: 170, G: 140, B: 60, A: 255},
-				EdgeStrength:      0.45,
+				EdgeColor:         color.NRGBA{R: 200, G: 140, B: 40, A: 255}, // Stronger edge color
+				EdgeStrength:      0.60,                                       // Increased from 0.45
 				EdgeInnerSigma:    0.6,
 				EdgeOuterSigma:    1.4,
 				EdgeGamma:         1.05,
@@ -126,12 +141,25 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 			geojson.LayerCivic: {
 				Layer:          geojson.LayerCivic,
 				Texture:        textures[geojson.LayerCivic],
-				Tint:           color.NRGBA{R: 190, G: 170, B: 190, A: 255},
-				TintStrength:   0.2,
+				Tint:           color.NRGBA{R: 200, G: 180, B: 200, A: 255}, // Lighter lavender for civic areas
+				TintStrength:   0.18,                                        // Subtle tint
 				ShadeSigma:     0,
 				ShadeStrength:  0,
-				EdgeColor:      color.NRGBA{R: 120, G: 90, B: 130, A: 255},
-				EdgeStrength:   0.4,
+				EdgeColor:      color.NRGBA{R: 140, G: 110, B: 150, A: 255},
+				EdgeStrength:   0.35,
+				EdgeInnerSigma: 1.0,
+				EdgeOuterSigma: 2.5,
+				EdgeGamma:      1.2,
+			},
+			geojson.LayerBuildings: {
+				Layer:          geojson.LayerBuildings,
+				Texture:        textures[geojson.LayerCivic], // Use same texture as civic
+				Tint:           color.NRGBA{R: 170, G: 140, B: 180, A: 255}, // Darker lavender for buildings
+				TintStrength:   0.35,                                        // Stronger tint for more contrast
+				ShadeSigma:     0,
+				ShadeStrength:  0,
+				EdgeColor:      color.NRGBA{R: 100, G: 70, B: 120, A: 255}, // Darker edges
+				EdgeStrength:   0.50,                                        // Stronger edges
 				EdgeInnerSigma: 1.0,
 				EdgeOuterSigma: 2.5,
 				EdgeGamma:      1.2,

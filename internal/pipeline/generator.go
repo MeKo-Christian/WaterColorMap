@@ -120,6 +120,11 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	}
 
 	params := watercolor.DefaultParams(g.tileSize, g.seed, g.textures)
+
+	// Adjust blur sigma based on zoom level for sharper edges at higher zooms
+	params.BlurSigma = watercolor.ZoomAdjustedBlurSigma(params.BlurSigma, int(coords.Z))
+	params.AntialiasSigma = watercolor.ZoomAdjustedBlurSigma(params.AntialiasSigma, int(coords.Z))
+
 	padPx := watercolor.RequiredPaddingPx(params)
 	if padPx > g.tileSize {
 		padPx = g.tileSize
@@ -277,7 +282,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		painted[geojson.LayerHighways] = highwaysPainted
 	}
 
-	// Constrain parks/civic to land, then paint.
+	// Constrain parks/civic/buildings to land, then paint.
 	if parksImg := raw[geojson.LayerParks]; parksImg != nil {
 		parksMask := mask.MinMask(mask.ExtractAlphaMask(parksImg), landMask)
 		parksPainted, err := watercolor.PaintLayerFromMask(parksMask, geojson.LayerParks, params)
@@ -294,13 +299,21 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		}
 		painted[geojson.LayerCivic] = civicPainted
 	}
+	if buildingsImg := raw[geojson.LayerBuildings]; buildingsImg != nil {
+		buildingsMask := mask.MinMask(mask.ExtractAlphaMask(buildingsImg), landMask)
+		buildingsPainted, err := watercolor.PaintLayerFromMask(buildingsMask, geojson.LayerBuildings, params)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to paint buildings constrained to land: %w", err)
+		}
+		painted[geojson.LayerBuildings] = buildingsPainted
+	}
 
 	// Paper base: fill the entire tile with a white texture so road cutouts show through.
 	base := texture.TileTexture(g.textures[geojson.LayerPaper], params.TileSize, params.OffsetX, params.OffsetY)
 	composited, err := composite.CompositeLayersOverBase(
 		base,
 		painted,
-		[]geojson.LayerType{geojson.LayerWater, geojson.LayerLand, geojson.LayerParks, geojson.LayerCivic, geojson.LayerRoads, geojson.LayerHighways},
+		[]geojson.LayerType{geojson.LayerWater, geojson.LayerLand, geojson.LayerParks, geojson.LayerCivic, geojson.LayerBuildings, geojson.LayerRoads, geojson.LayerHighways},
 		params.TileSize,
 	)
 	if err != nil {
