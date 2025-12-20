@@ -14,6 +14,7 @@ import (
 type OverpassDataSource struct {
 	client           overpass.Client
 	storeRawResponse bool // If true, stores raw Overpass response in TileData (for debugging)
+	clipGeomToBbox   bool // If true, uses "out geom(bbox)" - DO NOT USE (known Overpass API bug)
 }
 
 // NewOverpassDataSource creates a new Overpass data source
@@ -32,6 +33,7 @@ func NewOverpassDataSource(endpoint string) *OverpassDataSource {
 	return &OverpassDataSource{
 		client:           client,
 		storeRawResponse: false, // Don't store raw response by default (saves memory)
+		clipGeomToBbox:   false, // Don't clip geometry (prevents artifacts from Overpass bug)
 	}
 }
 
@@ -39,6 +41,22 @@ func NewOverpassDataSource(endpoint string) *OverpassDataSource {
 // This is useful for debugging but increases memory usage. Should only be used in tests.
 func (ds *OverpassDataSource) WithRawResponseStorage(enabled bool) *OverpassDataSource {
 	ds.storeRawResponse = enabled
+	return ds
+}
+
+// WithGeometryClipping enables clipping geometry to bbox in Overpass query.
+//
+// WARNING: DO NOT USE IN PRODUCTION. This has a known Overpass API bug.
+//
+// When enabled, uses "out geom(bbox)" which should clip geometry to the bbox boundary.
+// However, the Overpass API has a known regression (https://github.com/drolbr/Overpass-API/issues/417)
+// where this returns malformed/wrapped geometry for ways not fully contained in the bbox.
+// Visual testing confirmed severe rendering artifacts (distorted/wrapped polygons).
+//
+// This method is kept for potential future use if the Overpass API bug is fixed.
+// Default is disabled (false).
+func (ds *OverpassDataSource) WithGeometryClipping(enabled bool) *OverpassDataSource {
+	ds.clipGeomToBbox = enabled
 	return ds
 }
 
@@ -80,12 +98,19 @@ func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile 
 }
 
 // buildTileQuery creates a comprehensive Overpass QL query for tile features.
-// It fetches complete geometry for all ways that intersect the bounding box,
-// not just the portions within the bbox. This prevents polygon clipping artifacts
-// at tile boundaries.
+// It fetches COMPLETE unclipped geometry for all ways that intersect the bounding box.
 //
-// Uses "out geom qt;" for minimal response size:
-// - "geom" returns complete geometry (not clipped to bbox)
+// IMPORTANT: Uses "out geom qt;" to return COMPLETE geometry (not clipped to bbox).
+// This prevents polygon clipping artifacts at tile boundaries.
+//
+// WARNING: The clipGeomToBbox option is available but should NOT be used due to a known
+// Overpass API bug (https://github.com/drolbr/Overpass-API/issues/417) where "out geom(bbox)"
+// returns malformed/wrapped geometry for partially-included ways. Visual testing confirmed
+// severe rendering artifacts (distorted/wrapped polygons). Only use if the Overpass bug is fixed.
+//
+// Output modifiers:
+// - "geom" returns complete geometry for ways intersecting the bbox
+// - "geom(bbox)" clips geometry to bbox (BROKEN - causes malformed geometry)
 // - "qt" (quiet) omits metadata (version, changeset, timestamp, user, uid)
 func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
 	// Build query with all feature types we need.
@@ -94,14 +119,22 @@ func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
 	// Overpass returns the COMPLETE geometry of ways that intersect the bbox,
 	// rather than clipping geometry to the bbox boundary.
 	bbox := fmt.Sprintf("%.6f,%.6f,%.6f,%.6f", bounds.MinLat, bounds.MinLon, bounds.MaxLat, bounds.MaxLon)
+
+	// Choose output mode based on clipping setting
+	var outputMode string
+	if ds.clipGeomToBbox {
+		// WARNING: This produces malformed geometry due to Overpass API bug
+		outputMode = fmt.Sprintf("out geom(%s) qt;", bbox)
+	} else {
+		outputMode = "out geom qt;"
+	}
+
 	return fmt.Sprintf(`
 [out:json][timeout:60];
 (
   way["natural"="water"](%s);
   way["natural"="coastline"](%s);
-  way["waterway"](%s);
   relation["natural"="water"](%s);
-  relation["waterway"](%s);
   way["leisure"="park"](%s);
   way["leisure"="garden"](%s);
   way["landuse"="forest"](%s);
@@ -114,8 +147,8 @@ func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
   way["amenity"="hospital"](%s);
   way["amenity"="university"](%s);
 );
-out geom qt;
-`, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox)
+%s
+`, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, outputMode)
 }
 
 // Close cleans up resources (no-op for current version)
