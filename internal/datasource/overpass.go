@@ -135,8 +135,11 @@ func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
   way["natural"="water"](%s);
   way["natural"="coastline"](%s);
   relation["natural"="water"](%s);
+  way["waterway"](%s);
+  relation["waterway"](%s);
   way["leisure"="park"](%s);
   way["leisure"="garden"](%s);
+  way["leisure"="playground"](%s);
   way["landuse"="forest"](%s);
   way["landuse"="grass"](%s);
   way["landuse"="meadow"](%s);
@@ -148,7 +151,7 @@ func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
   way["amenity"="university"](%s);
 );
 %s
-`, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, outputMode)
+`, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, outputMode)
 }
 
 // Close cleans up resources (no-op for current version)

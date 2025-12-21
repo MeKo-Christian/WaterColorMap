@@ -9,7 +9,9 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/MeKo-Tech/watercolormap/internal/composite"
 	"github.com/MeKo-Tech/watercolormap/internal/geojson"
@@ -20,6 +22,51 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/types"
 	"github.com/MeKo-Tech/watercolormap/internal/watercolor"
 )
+
+// StageCapture represents a single captured intermediate stage.
+type StageCapture struct {
+	Name        string      // e.g., "01_water_alpha"
+	Description string      // e.g., "Alpha mask extracted from water layer"
+	Image       image.Image // The actual image data
+	ZOrder      int         // For sorting (01, 02, etc.)
+}
+
+// DebugContext optionally collects intermediate pipeline stages.
+type DebugContext struct {
+	Stages []StageCapture
+	mu     sync.Mutex // Thread-safe
+}
+
+// Capture adds a stage to the debug context if it exists.
+func (dc *DebugContext) Capture(name, description string, img image.Image, zorder int) {
+	if dc == nil {
+		return // Fast path: no debug context, no overhead
+	}
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+	dc.Stages = append(dc.Stages, StageCapture{
+		Name:        name,
+		Description: description,
+		Image:       img,
+		ZOrder:      zorder,
+	})
+}
+
+// SortedStages returns stages sorted by ZOrder.
+func (dc *DebugContext) SortedStages() []StageCapture {
+	if dc == nil {
+		return nil
+	}
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+
+	sorted := make([]StageCapture, len(dc.Stages))
+	copy(sorted, dc.Stages)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].ZOrder < sorted[j].ZOrder
+	})
+	return sorted
+}
 
 // GeneratorOptions controls output and encoding behavior.
 type GeneratorOptions struct {
@@ -89,7 +136,13 @@ func NewGenerator(ds DataSource, stylesDir, texturesDir, outputDir string, tileS
 
 // Generate renders, paints, composites, and writes the final tile PNG.
 // Returns the final tile path and (optionally) the layer directory when kept.
-func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool, filenameSuffix string) (string, string, error) {
+// debugCtx can be *DebugContext or nil; pass nil in production for zero overhead.
+func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool, filenameSuffix string, debugCtx interface{}) (string, string, error) {
+	// Type-assert debugCtx to *DebugContext if provided
+	var dc *DebugContext
+	if debugCtx != nil {
+		dc = debugCtx.(*DebugContext)
+	}
 	suffix := strings.TrimSpace(filenameSuffix)
 
 	// Compute final path based on folder structure setting
@@ -136,6 +189,13 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 	params.TileSize = metatileSize
 	params.OffsetX = int(coords.X)*g.tileSize - padPx
 	params.OffsetY = int(coords.Y)*g.tileSize - padPx
+
+	// Generate Perlin noise once for all layers to avoid redundant allocations
+	params.PerlinNoise = mask.GeneratePerlinNoiseWithOffset(
+		params.TileSize, params.TileSize,
+		params.NoiseScale, params.Seed,
+		params.OffsetX, params.OffsetY,
+	)
 
 	g.log().Info("Fetching tile data", "coords", coords.String(), "padPx", padPx)
 	tileCoord := types.TileCoordinate{
@@ -206,23 +266,54 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		raw[layer] = img
 	}
 
+	// Capture raw rendered layers
+	for layer, img := range raw {
+		if img != nil {
+			dc.Capture(
+				fmt.Sprintf("00_rendered_%s", layer),
+				fmt.Sprintf("Raw rendered %s layer from Mapnik", layer),
+				img,
+				0,
+			)
+		}
+	}
+
 	// --- Phase 3 (revised): cross-layer mask construction ---
-	// water = sea (same in our data)
+	// water = polygonal water bodies, rivers = linear waterways
 	waterImg := raw[geojson.LayerWater]
+	riversImg := raw[geojson.LayerRivers]
 	roadsImg := raw[geojson.LayerRoads]
 	highwaysImg := raw[geojson.LayerHighways]
 
 	baseBounds := image.Rect(0, 0, params.TileSize, params.TileSize)
 	waterMask := mask.NewEmptyMask(baseBounds)
+	riversMask := mask.NewEmptyMask(baseBounds)
 	roadsMask := mask.NewEmptyMask(baseBounds)
 	if waterImg != nil {
 		waterMask = mask.ExtractAlphaMask(waterImg)
+	}
+	if riversImg != nil {
+		riversMask = mask.ExtractAlphaMask(riversImg)
 	}
 	if roadsImg != nil {
 		roadsMask = mask.ExtractAlphaMask(roadsImg)
 	}
 
-	nonLandBase := mask.MaxMask(waterMask, roadsMask)
+	// Capture alpha masks
+	dc.Capture("01_water_alpha", "Alpha mask from water layer", waterMask, 1)
+	dc.Capture("02_rivers_alpha", "Alpha mask from rivers layer", riversMask, 2)
+	dc.Capture("03_roads_alpha", "Alpha mask from roads layer", roadsMask, 3)
+
+	// Add highways alpha extraction explicitly
+	highwaysAlpha := mask.NewEmptyMask(baseBounds)
+	if highwaysImg != nil {
+		highwaysAlpha = mask.ExtractAlphaMask(highwaysImg)
+	}
+	dc.Capture("03_highways_alpha", "Alpha mask from highways layer", highwaysAlpha, 3)
+
+	// Include both water bodies and rivers in the non-land mask
+	nonLandBase := mask.MaxMask(mask.MaxMask(waterMask, riversMask), roadsMask)
+	dc.Capture("04_nonland_union", "Union of water + rivers + roads masks", nonLandBase, 4)
 
 	// Paint water from its own alpha mask (not the combined non-land mask).
 	if waterImg != nil {
@@ -231,35 +322,71 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 			return "", "", fmt.Errorf("failed to paint water: %w", err)
 		}
 		painted[geojson.LayerWater] = waterPainted
+		dc.Capture("12_painted_water", "Watercolor-painted water layer", waterPainted, 12)
+	}
+
+	// Paint rivers from their own alpha mask
+	if riversImg != nil {
+		riversPainted, err := watercolor.PaintLayer(riversImg, geojson.LayerRivers, params)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to paint rivers: %w", err)
+		}
+		painted[geojson.LayerRivers] = riversPainted
+		dc.Capture("13_painted_rivers", "Watercolor-painted rivers layer", riversPainted, 18)
 	}
 
 	// Build nonLand mask using the standard mask pipeline (blur/noise/threshold/AA), then invert for land.
 	// We reuse the same parameters as other layers (but operate on the combined mask).
-	finalNonLandMask, err := func() (*image.Gray, error) {
-		blurred := mask.GaussianBlur(nonLandBase, params.BlurSigma)
-		noise := mask.GeneratePerlinNoiseWithOffset(params.TileSize, params.TileSize, params.NoiseScale, params.Seed, params.OffsetX, params.OffsetY)
+	landMask, err := func() (*image.Gray, error) {
+		blurred := mask.BoxBlurSigma(nonLandBase, params.BlurSigma)
+		dc.Capture("05_blur", "Blurred non-land mask", blurred, 4)
+
+		dc.Capture("05_noise", "Perlin noise texture (reference)", params.PerlinNoise, 5)
+
 		noisy := blurred
 		if params.NoiseStrength != 0 {
-			noisy = mask.ApplyNoiseToMask(blurred, noise, params.NoiseStrength)
+			noisy = mask.ApplyNoiseToMask(blurred, params.PerlinNoise, params.NoiseStrength)
+			dc.Capture("07_noisy", "Blurred mask with Perlin noise applied", noisy, 6)
 		}
-		thresholded := mask.ApplyThreshold(noisy, params.Threshold)
-		finalMask := thresholded
-		if params.AntialiasSigma > 0 {
-			finalMask = mask.AntialiasEdges(thresholded, params.AntialiasSigma)
-		}
+		finalMask := mask.ApplyThresholdWithAntialiasAndInvert(noisy, params.Threshold)
+		dc.Capture("08_threshold_antialias", "Thresholded and antialiased non-land mask", finalMask, 7)
 		return finalMask, nil
 	}()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to process non-land mask: %w", err)
 	}
-	landMask := mask.InvertMask(finalNonLandMask)
+
+	// Apply heavy blur to land mask for soft blending
+	heavyBlurredLandMask := mask.BoxBlurSigma(landMask, 9.0)
+
+	// Apply the heavily blurred mask to the original land mask to create soft edges
+	landMaskShadow := mask.MinMask(landMask, heavyBlurredLandMask)
+	dc.Capture("09_land_mask_shadow", "Land mask masked with heavy blur", landMaskShadow, 9)
 
 	// Paint land directly from derived land mask.
-	paintedLand, err := watercolor.PaintLayerFromFinalMask(landMask, geojson.LayerLand, params)
+	paintedLandRaw, err := watercolor.PaintLayerFromFinalMask(landMask, geojson.LayerLand, params)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to paint land from derived mask: %w", err)
 	}
+
+	// Apply soft edge mask to darken edges while preserving alpha and color information
+	// Strength 0.3-0.5 provides subtle darkening without going to black
+	paintedLand := mask.ApplySoftEdgeMask(paintedLandRaw, landMaskShadow, 0.3)
 	painted[geojson.LayerLand] = paintedLand
+	dc.Capture("10_painted_land", "Watercolor-painted land layer with soft edges", paintedLand, 10)
+
+	// Create composite of land on white canvas for debugging
+	whiteCanvas := texture.TileTexture(g.textures[geojson.LayerPaper], params.TileSize, params.OffsetX, params.OffsetY)
+	landOnCanvas, err := composite.CompositeLayersOverBase(
+		whiteCanvas,
+		map[geojson.LayerType]image.Image{geojson.LayerLand: paintedLand},
+		[]geojson.LayerType{geojson.LayerLand},
+		params.TileSize,
+	)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to composite land on canvas: %w", err)
+	}
+	dc.Capture("11_painted_land_on_canvas", "Land layer composited on white canvas", landOnCanvas, 11)
 
 	// Paint roads from their own alpha mask.
 	// NOTE: Roads are also part of the derived non-land union mask, so they carve holes
@@ -271,6 +398,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 			return "", "", fmt.Errorf("failed to paint roads: %w", err)
 		}
 		painted[geojson.LayerRoads] = roadsPainted
+		dc.Capture("15_painted_roads", "Watercolor-painted roads layer", roadsPainted, 15)
 	}
 
 	// Paint highways/major roads on top.
@@ -280,45 +408,54 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 			return "", "", fmt.Errorf("failed to paint highways: %w", err)
 		}
 		painted[geojson.LayerHighways] = highwaysPainted
+		dc.Capture("19_painted_highways", "Watercolor-painted highways layer", highwaysPainted, 19)
 	}
 
 	// Constrain parks/civic/buildings to land, then paint.
 	if parksImg := raw[geojson.LayerParks]; parksImg != nil {
 		parksMask := mask.MinMask(mask.ExtractAlphaMask(parksImg), landMask)
+		dc.Capture("14_parks_on_land", "Parks constrained to land", parksMask, 14)
 		parksPainted, err := watercolor.PaintLayerFromMask(parksMask, geojson.LayerParks, params)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to paint parks constrained to land: %w", err)
 		}
 		painted[geojson.LayerParks] = parksPainted
+		dc.Capture("16_painted_parks", "Watercolor-painted parks layer", parksPainted, 16)
 	}
 	if civicImg := raw[geojson.LayerCivic]; civicImg != nil {
 		civicMask := mask.MinMask(mask.ExtractAlphaMask(civicImg), landMask)
+		dc.Capture("10_civic_on_land", "Civic constrained to land", civicMask, 10)
 		civicPainted, err := watercolor.PaintLayerFromMask(civicMask, geojson.LayerCivic, params)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to paint civic constrained to land: %w", err)
 		}
 		painted[geojson.LayerCivic] = civicPainted
+		dc.Capture("17_painted_civic", "Watercolor-painted civic layer", civicPainted, 17)
 	}
 	if buildingsImg := raw[geojson.LayerBuildings]; buildingsImg != nil {
 		buildingsMask := mask.MinMask(mask.ExtractAlphaMask(buildingsImg), landMask)
+		dc.Capture("11_buildings_on_land", "Buildings constrained to land", buildingsMask, 11)
 		buildingsPainted, err := watercolor.PaintLayerFromMask(buildingsMask, geojson.LayerBuildings, params)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to paint buildings constrained to land: %w", err)
 		}
 		painted[geojson.LayerBuildings] = buildingsPainted
+		dc.Capture("18_painted_buildings", "Watercolor-painted buildings layer", buildingsPainted, 18)
 	}
 
 	// Paper base: fill the entire tile with a white texture so road cutouts show through.
 	base := texture.TileTexture(g.textures[geojson.LayerPaper], params.TileSize, params.OffsetX, params.OffsetY)
+	// Layer order matches OSM standard: land (back) → parks → rivers → water → roads → highways → buildings → civic (front)
 	composited, err := composite.CompositeLayersOverBase(
 		base,
 		painted,
-		[]geojson.LayerType{geojson.LayerWater, geojson.LayerLand, geojson.LayerParks, geojson.LayerCivic, geojson.LayerBuildings, geojson.LayerRoads, geojson.LayerHighways},
+		[]geojson.LayerType{geojson.LayerLand, geojson.LayerParks, geojson.LayerRivers, geojson.LayerWater, geojson.LayerRoads, geojson.LayerHighways, geojson.LayerBuildings, geojson.LayerCivic},
 		params.TileSize,
 	)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to composite layers: %w", err)
 	}
+	dc.Capture("20_combined_metatile", "Composited layers (before crop)", composited, 20)
 
 	// Crop back to the requested tile size.
 	final := composited
@@ -326,6 +463,7 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		cropRect := image.Rect(padPx, padPx, padPx+g.tileSize, padPx+g.tileSize)
 		final = cropNRGBA(composited, cropRect)
 	}
+	dc.Capture("21_combined_final", "Final tile (after crop)", final, 21)
 
 	// Encode PNG to get the data
 	enc := png.Encoder{CompressionLevel: png.DefaultCompression}

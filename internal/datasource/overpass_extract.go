@@ -60,6 +60,8 @@ func ExtractFeaturesFromOverpassResult(result *overpass.Result) types.FeatureCol
 		switch {
 		case isWater(way.Tags):
 			features.Water = append(features.Water, *feature)
+		case isRiver(way.Tags):
+			features.Rivers = append(features.Rivers, *feature)
 		case isPark(way.Tags):
 			features.Parks = append(features.Parks, *feature)
 		case isRoad(way.Tags):
@@ -89,6 +91,8 @@ func ExtractFeaturesFromOverpassResult(result *overpass.Result) types.FeatureCol
 		switch {
 		case isWater(rel.Tags):
 			features.Water = append(features.Water, *feature)
+		case isRiver(rel.Tags):
+			features.Rivers = append(features.Rivers, *feature)
 		case isPark(rel.Tags):
 			features.Parks = append(features.Parks, *feature)
 		}
@@ -265,15 +269,21 @@ func categorizeByTags(tags map[string]string) types.FeatureType {
 
 func isWater(tags map[string]string) bool {
 	// Only include polygonal water bodies, not linear waterways
-	// Waterways (rivers, streams, ditches) are linear features that should not be
-	// rendered with PolygonSymbolizer as it forces them closed with straight lines
+	// Waterways are now handled separately in isRiver()
 	return tags["natural"] == "water" ||
 		tags["natural"] == "coastline"
+}
+
+func isRiver(tags map[string]string) bool {
+	// Linear waterways: rivers, streams, canals
+	// These will be rendered with LineSymbolizer to avoid polygon closing issues
+	return tags["waterway"] != ""
 }
 
 func isPark(tags map[string]string) bool {
 	return tags["leisure"] == "park" ||
 		tags["leisure"] == "garden" ||
+		tags["leisure"] == "playground" ||
 		tags["landuse"] == "forest" ||
 		tags["landuse"] == "grass" ||
 		tags["landuse"] == "meadow"

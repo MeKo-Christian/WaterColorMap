@@ -44,74 +44,149 @@
       <LineSymbolizer stroke="#FFFFFF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
 
-    <!-- Mid zoom (z12-13) -->
+    <!-- Mid zoom (z12-13) - Only show major roads -->
     <Rule>
       <Filter>[highway] = 'motorway' or [highway] = 'motorway_link'</Filter>
-      <MaxScaleDenominator>150000</MaxScaleDenominator>
-      <MinScaleDenominator>50000</MinScaleDenominator>
-      <LineSymbolizer stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" />
-    </Rule>
-    <Rule>
-      <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
-      <MaxScaleDenominator>150000</MaxScaleDenominator>
-      <MinScaleDenominator>50000</MinScaleDenominator>
-      <LineSymbolizer stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" />
-    </Rule>
-    <Rule>
-      <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
       <MaxScaleDenominator>150000</MaxScaleDenominator>
       <MinScaleDenominator>50000</MinScaleDenominator>
       <LineSymbolizer stroke="#FFFFFF" stroke-width="4.0" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
+      <Filter>[highway] = 'trunk' or [highway] = 'trunk_link'</Filter>
+      <MaxScaleDenominator>150000</MaxScaleDenominator>
+      <MinScaleDenominator>50000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
+      <MaxScaleDenominator>150000</MaxScaleDenominator>
+      <MinScaleDenominator>50000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="3.0" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
+      <MaxScaleDenominator>150000</MaxScaleDenominator>
+      <MinScaleDenominator>50000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
       <Filter>[highway] = 'tertiary' or [highway] = 'tertiary_link'</Filter>
-      <MaxScaleDenominator>150000</MaxScaleDenominator>
-      <MinScaleDenominator>50000</MinScaleDenominator>
-      <LineSymbolizer stroke="#FFFFFF" stroke-width="3.3" stroke-linecap="round" stroke-linejoin="round" />
-    </Rule>
-    <Rule>
-      <Filter>[highway] = 'residential' or [highway] = 'unclassified' or [highway] = 'living_street'</Filter>
-      <MaxScaleDenominator>150000</MaxScaleDenominator>
-      <MinScaleDenominator>50000</MinScaleDenominator>
-      <LineSymbolizer stroke="#FFFFFF" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" />
-    </Rule>
-    <Rule>
-      <Filter>[highway] != ''</Filter>
       <MaxScaleDenominator>150000</MaxScaleDenominator>
       <MinScaleDenominator>50000</MinScaleDenominator>
       <LineSymbolizer stroke="#FFFFFF" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
 
-    <!-- High zoom (z14+) -->
+    <!-- High zoom z14 (50k-25k) - Cap normal roads at 2px -->
     <Rule>
       <Filter>[highway] = 'motorway' or [highway] = 'motorway_link'</Filter>
       <MaxScaleDenominator>50000</MaxScaleDenominator>
+      <MinScaleDenominator>25000</MinScaleDenominator>
       <LineSymbolizer stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
       <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
       <MaxScaleDenominator>50000</MaxScaleDenominator>
+      <MinScaleDenominator>25000</MinScaleDenominator>
       <LineSymbolizer stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
       <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
       <MaxScaleDenominator>50000</MaxScaleDenominator>
+      <MinScaleDenominator>25000</MinScaleDenominator>
       <LineSymbolizer stroke="#FFFFFF" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
       <Filter>[highway] = 'tertiary' or [highway] = 'tertiary_link'</Filter>
       <MaxScaleDenominator>50000</MaxScaleDenominator>
+      <MinScaleDenominator>25000</MinScaleDenominator>
       <LineSymbolizer stroke="#FFFFFF" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
       <Filter>[highway] = 'residential' or [highway] = 'unclassified' or [highway] = 'living_street'</Filter>
       <MaxScaleDenominator>50000</MaxScaleDenominator>
-      <LineSymbolizer stroke="#FFFFFF" stroke-width="3.0" stroke-linecap="round" stroke-linejoin="round" />
+      <MinScaleDenominator>25000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
     <Rule>
       <Filter>[highway] != ''</Filter>
       <MaxScaleDenominator>50000</MaxScaleDenominator>
-      <LineSymbolizer stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+      <MinScaleDenominator>25000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+
+    <!-- High zoom (z15-17) -->
+    <Rule>
+      <Filter>[highway] = 'motorway' or [highway] = 'motorway_link'</Filter>
+      <MaxScaleDenominator>25000</MaxScaleDenominator>
+      <MinScaleDenominator>3000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
+      <MaxScaleDenominator>25000</MaxScaleDenominator>
+      <MinScaleDenominator>3000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
+      <MaxScaleDenominator>25000</MaxScaleDenominator>
+      <MinScaleDenominator>3000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'tertiary' or [highway] = 'tertiary_link'</Filter>
+      <MaxScaleDenominator>25000</MaxScaleDenominator>
+      <MinScaleDenominator>3000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'residential' or [highway] = 'unclassified' or [highway] = 'living_street'</Filter>
+      <MaxScaleDenominator>25000</MaxScaleDenominator>
+      <MinScaleDenominator>3000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] != ''</Filter>
+      <MaxScaleDenominator>25000</MaxScaleDenominator>
+      <MinScaleDenominator>3000</MinScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+
+    <!-- Very high zoom (z18+) - Doubled sizes for realistic appearance -->
+    <Rule>
+      <Filter>[highway] = 'motorway' or [highway] = 'motorway_link'</Filter>
+      <MaxScaleDenominator>3000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="13.0" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'trunk' or [highway] = 'trunk_link'</Filter>
+      <MaxScaleDenominator>3000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="11.0" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'primary' or [highway] = 'primary_link'</Filter>
+      <MaxScaleDenominator>3000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="11.0" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'secondary' or [highway] = 'secondary_link'</Filter>
+      <MaxScaleDenominator>3000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="9.6" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'tertiary' or [highway] = 'tertiary_link'</Filter>
+      <MaxScaleDenominator>3000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="7.6" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] = 'residential' or [highway] = 'unclassified' or [highway] = 'living_street'</Filter>
+      <MaxScaleDenominator>3000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="4.0" stroke-linecap="round" stroke-linejoin="round" />
+    </Rule>
+    <Rule>
+      <Filter>[highway] != ''</Filter>
+      <MaxScaleDenominator>3000</MaxScaleDenominator>
+      <LineSymbolizer stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" />
     </Rule>
   </Style>
 
