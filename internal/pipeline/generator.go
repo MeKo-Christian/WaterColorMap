@@ -356,18 +356,17 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		return "", "", fmt.Errorf("failed to process non-land mask: %w", err)
 	}
 
-	// Apply heavy blur to land mask for soft blending
-	heavyBlurredLandMask := mask.BoxBlurSigma(landMask, 9.0)
-
-	// Apply the heavily blurred mask to the original land mask to create soft edges
-	landMaskShadow := mask.MinMask(landMask, heavyBlurredLandMask)
-	dc.Capture("09_land_mask_shadow", "Land mask masked with heavy blur", landMaskShadow, 9)
-
 	// Paint land directly from derived land mask.
 	paintedLandRaw, err := watercolor.PaintLayerFromFinalMask(landMask, geojson.LayerLand, params)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to paint land from derived mask: %w", err)
 	}
+
+	// Compute distance-based edge mask to avoid stacking in small features
+	// Radius of 9 pixels controls how far the darkening effect extends from edges
+	// Gamma of 9.0 creates steep falloff concentrated near edges
+	landMaskShadow := mask.CreateDistanceEdgeMask(landMask, 9.0, 9.0)
+	dc.Capture("09_land_mask_shadow", "Distance-based edge mask", landMaskShadow, 9)
 
 	// Apply soft edge mask to darken edges while preserving alpha and color information
 	// Strength 0.3-0.5 provides subtle darkening without going to black

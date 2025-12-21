@@ -383,11 +383,17 @@ func BoxBlur(mask *image.Gray, radius int) *image.Gray {
 			}
 		}
 
-		// First pixel
-		temp.Pix[y*temp.Stride] = uint8(sum / count)
+		// Pre-calculate reciprocal for multiplication instead of division
+		invCount := 1.0 / float64(count)
+
+		// First pixel - truncate to match integer division behavior
+		temp.Pix[y*temp.Stride] = uint8(int(float64(sum) * invCount))
 
 		// Slide window across row
 		for x := 1; x < width; x++ {
+			// Track if count changes (only at edges)
+			prevCount := count
+
 			// Remove left pixel from window
 			leftX := x - radius - 1
 			if leftX >= 0 {
@@ -404,7 +410,12 @@ func BoxBlur(mask *image.Gray, radius int) *image.Gray {
 				count++
 			}
 
-			temp.Pix[y*temp.Stride+x] = uint8(sum / count)
+			// Recalculate reciprocal only if count changed
+			if count != prevCount {
+				invCount = 1.0 / float64(count)
+			}
+
+			temp.Pix[y*temp.Stride+x] = uint8(int(float64(sum) * invCount))
 		}
 	}
 
@@ -425,11 +436,17 @@ func BoxBlur(mask *image.Gray, radius int) *image.Gray {
 			}
 		}
 
+		// Pre-calculate reciprocal for multiplication instead of division
+		invCount := 1.0 / float64(count)
+
 		// First pixel
-		dst.Pix[x] = uint8(sum / count)
+		dst.Pix[x] = uint8(float64(sum) * invCount)
 
 		// Slide window down column
 		for y := 1; y < height; y++ {
+			// Track if count changes (only at edges)
+			prevCount := count
+
 			// Remove top pixel from window
 			topY := y - radius - 1
 			if topY >= 0 {
@@ -446,7 +463,12 @@ func BoxBlur(mask *image.Gray, radius int) *image.Gray {
 				count++
 			}
 
-			dst.Pix[y*dst.Stride+x] = uint8(sum / count)
+			// Recalculate reciprocal only if count changed
+			if count != prevCount {
+				invCount = 1.0 / float64(count)
+			}
+
+			dst.Pix[y*dst.Stride+x] = uint8(float64(sum) * invCount)
 		}
 	}
 

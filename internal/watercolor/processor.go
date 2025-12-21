@@ -221,17 +221,20 @@ func paintFromFinalMask(finalMask *image.Gray, layer geojson.LayerType, params P
 		result = mask.ApplySoftEdgeMask(result, invertedShade, style.ShadeStrength)
 	}
 
-	// Edge darkening using soft edge mask (HSL-based darkening).
-	edgeMask := mask.CreateEdgeMask(finalMask, style.EdgeInnerSigma, style.EdgeOuterSigma)
+	// Edge darkening using distance-based edge mask
+	// Convert sigma parameters to radius (approximation: radius ≈ 3*sigma)
+	radius := float64(style.EdgeOuterSigma * 3.0)
+	gamma := style.EdgeGamma
+	if gamma <= 0 {
+		gamma = 1.0
+	}
+
+	edgeMask := mask.CreateDistanceEdgeMask(finalMask, radius, gamma)
 	if edgeMask == nil {
 		return nil, errors.New("failed to create edge mask")
 	}
-	if style.EdgeGamma != 1.0 {
-		edgeMask = mask.TaperEdgeMask(edgeMask, style.EdgeGamma)
-	}
 	// ApplySoftEdgeMask expects: 255=no change, 0=maximum effect
-	// CreateEdgeMask produces: high values at edges, low in center
-	// So we need to invert: edges should be dark (0) for maximum darkening
+	// CreateDistanceEdgeMask produces: 255=no effect (center), 0=max effect (edges)
 	result = mask.ApplySoftEdgeMask(result, edgeMask, style.EdgeStrength)
 
 	return result, nil
