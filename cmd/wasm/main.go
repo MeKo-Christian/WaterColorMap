@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"syscall/js"
+
 	"github.com/MeKo-Tech/watercolormap/internal/composite"
 	"github.com/MeKo-Tech/watercolormap/internal/datasource"
 	"github.com/MeKo-Tech/watercolormap/internal/geojson"
@@ -21,7 +23,6 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/texture"
 	"github.com/MeKo-Tech/watercolormap/internal/types"
 	"github.com/MeKo-Tech/watercolormap/internal/watercolor"
-	"syscall/js"
 )
 
 const defaultConcurrency = 4
@@ -224,6 +225,13 @@ func watercolorRenderTileFromOverpassJSON(this js.Value, args []js.Value) interf
 	params.OffsetX = req.X*tileSize - padPx
 	params.OffsetY = req.Y*tileSize - padPx
 
+	// Generate Perlin noise once for all layers to avoid redundant allocations
+	params.PerlinNoise = mask.GeneratePerlinNoiseWithOffset(
+		params.TileSize, params.TileSize,
+		params.NoiseScale, params.Seed,
+		params.OffsetX, params.OffsetY,
+	)
+
 	result, err := datasource.UnmarshalOverpassJSON([]byte(overpassJSON))
 	if err != nil {
 		return map[string]any{"error": fmt.Sprintf("failed to parse Overpass JSON: %v", err)}
@@ -259,24 +267,18 @@ func watercolorRenderTileFromOverpassJSON(this js.Value, args []js.Value) interf
 		painted[geojson.LayerWater] = waterPainted
 	}
 
-	finalNonLandMask, err := func() (*image.Gray, error) {
-		blurred := mask.GaussianBlur(nonLandBase, params.BlurSigma)
-		noise := mask.GeneratePerlinNoiseWithOffset(params.TileSize, params.TileSize, params.NoiseScale, params.Seed, params.OffsetX, params.OffsetY)
+	landMask, err := func() (*image.Gray, error) {
+		blurred := mask.BoxBlurSigma(nonLandBase, params.BlurSigma)
 		noisy := blurred
 		if params.NoiseStrength != 0 {
-			noisy = mask.ApplyNoiseToMask(blurred, noise, params.NoiseStrength)
+			noisy = mask.ApplyNoiseToMask(blurred, params.PerlinNoise, params.NoiseStrength)
 		}
-		thresholded := mask.ApplyThreshold(noisy, params.Threshold)
-		finalMask := thresholded
-		if params.AntialiasSigma > 0 {
-			finalMask = mask.AntialiasEdges(thresholded, params.AntialiasSigma)
-		}
+		finalMask := mask.ApplyThresholdWithAntialiasAndInvert(noisy, params.Threshold)
 		return finalMask, nil
 	}()
 	if err != nil {
 		return map[string]any{"error": fmt.Sprintf("failed to process non-land mask: %v", err)}
 	}
-	landMask := mask.InvertMask(finalNonLandMask)
 
 	paintedLand, err := watercolor.PaintLayerFromFinalMask(landMask, geojson.LayerLand, params)
 	if err != nil {

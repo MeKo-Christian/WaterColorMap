@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	"image/color"
 
 	"github.com/MeKo-Tech/watercolormap/internal/geojson"
 	"github.com/MeKo-Tech/watercolormap/internal/mask"
@@ -16,7 +15,6 @@ type LayerStyle struct {
 	Texture           image.Image
 	Layer             geojson.LayerType
 	EdgeStrength      float64
-	TintStrength      float64
 	MaskNoiseStrength float64
 	ShadeStrength     float64
 	EdgeGamma         float64
@@ -24,8 +22,7 @@ type LayerStyle struct {
 	ShadeSigma        float32
 	EdgeInnerSigma    float32
 	EdgeOuterSigma    float32
-	EdgeColor         color.NRGBA
-	Tint              color.NRGBA
+	MaskThreshold     *uint8 // Optional per-layer threshold override (if nil, uses global Params.Threshold)
 }
 
 // Params define the common watercolor processing knobs.
@@ -40,6 +37,7 @@ type Params struct {
 	BlurSigma      float32
 	AntialiasSigma float32
 	Threshold      uint8
+	PerlinNoise    *image.Gray // Pre-generated noise texture, reused across all layers to avoid redundant allocations
 }
 
 // ZoomAdjustedBlurSigma returns blur sigma adjusted for zoom level.
@@ -62,22 +60,19 @@ func ZoomAdjustedBlurSigma(baseBlurSigma float32, zoom int) float32 {
 func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]image.Image) Params {
 	return Params{
 		TileSize:       tileSize,
-		BlurSigma:      1.2,  // Reduced from 1.8 for sharper edges
+		BlurSigma:      1.2,
 		NoiseScale:     30.0,
 		NoiseStrength:  0.28,
-		Threshold:      128,
-		AntialiasSigma: 0.5, // Reduced from 0.6 for crisper edges
+		Threshold:      50,
+		AntialiasSigma: 0.5,
 		Seed:           seed,
 		Styles: map[geojson.LayerType]LayerStyle{
 			geojson.LayerLand: {
 				Layer:          geojson.LayerLand,
 				Texture:        textures[geojson.LayerLand],
-				Tint:           color.NRGBA{R: 210, G: 190, B: 160, A: 255},
-				TintStrength:   0.25,
-				ShadeSigma:     4.5,
+				ShadeSigma:     3.5,
 				ShadeStrength:  0.12,
-				EdgeColor:      color.NRGBA{R: 120, G: 100, B: 80, A: 255},
-				EdgeStrength:   0.35,
+				EdgeStrength:   0.2,
 				EdgeInnerSigma: 1.0,
 				EdgeOuterSigma: 3.0,
 				EdgeGamma:      1.5,
@@ -85,25 +80,31 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 			geojson.LayerWater: {
 				Layer:          geojson.LayerWater,
 				Texture:        textures[geojson.LayerWater],
-				Tint:           color.NRGBA{R: 140, G: 180, B: 220, A: 255},
-				TintStrength:   0.3,
 				ShadeSigma:     0,
 				ShadeStrength:  0,
-				EdgeColor:      color.NRGBA{R: 70, G: 110, B: 150, A: 255},
-				EdgeStrength:   0.45,
+				EdgeStrength:   0.2,
 				EdgeInnerSigma: 1.0,
 				EdgeOuterSigma: 3.5,
 				EdgeGamma:      1.3,
 			},
+			geojson.LayerRivers: {
+				Layer:             geojson.LayerRivers,
+				Texture:           textures[geojson.LayerWater], // Use same texture as water
+				MaskBlurSigma:     0.8,                          // Light blur for natural river edges
+				MaskNoiseStrength: 0.15,                         // Subtle noise for organic feel
+				ShadeSigma:        0,
+				ShadeStrength:     0,
+				EdgeStrength:      0.2,
+				EdgeInnerSigma:    0.8,
+				EdgeOuterSigma:    2.5,
+				EdgeGamma:         1.2,
+			},
 			geojson.LayerParks: {
 				Layer:          geojson.LayerParks,
 				Texture:        textures[geojson.LayerParks],
-				Tint:           color.NRGBA{R: 120, G: 170, B: 110, A: 255},
-				TintStrength:   0.3,
 				ShadeSigma:     0,
 				ShadeStrength:  0,
-				EdgeColor:      color.NRGBA{R: 70, G: 120, B: 70, A: 255},
-				EdgeStrength:   0.4,
+				EdgeStrength:   0.2,
 				EdgeInnerSigma: 1.0,
 				EdgeOuterSigma: 3.0,
 				EdgeGamma:      1.4,
@@ -111,14 +112,11 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 			geojson.LayerRoads: {
 				Layer:             geojson.LayerRoads,
 				Texture:           textures[geojson.LayerRoads],
-				Tint:              color.NRGBA{R: 245, G: 180, B: 100, A: 255}, // More saturated orange
-				TintStrength:      0.55,                                        // Increased from 0.35 for bolder color
 				MaskBlurSigma:     1.4,
 				MaskNoiseStrength: 0.25,
 				ShadeSigma:        0,
 				ShadeStrength:     0,
-				EdgeColor:         color.NRGBA{R: 180, G: 110, B: 50, A: 255}, // Darker edge for definition
-				EdgeStrength:      0.65,                                       // Increased from 0.55
+				EdgeStrength:      0.2,
 				EdgeInnerSigma:    0.6,
 				EdgeOuterSigma:    1.5,
 				EdgeGamma:         1.1,
@@ -126,14 +124,11 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 			geojson.LayerHighways: {
 				Layer:             geojson.LayerHighways,
 				Texture:           textures[geojson.LayerHighways],
-				Tint:              color.NRGBA{R: 255, G: 200, B: 80, A: 255}, // More saturated yellow-orange
-				TintStrength:      0.50,                                       // Increased from 0.15 for much bolder color
 				MaskBlurSigma:     1.1,
 				MaskNoiseStrength: 0.18,
 				ShadeSigma:        0,
 				ShadeStrength:     0,
-				EdgeColor:         color.NRGBA{R: 200, G: 140, B: 40, A: 255}, // Stronger edge color
-				EdgeStrength:      0.60,                                       // Increased from 0.45
+				EdgeStrength:      0.2,
 				EdgeInnerSigma:    0.6,
 				EdgeOuterSigma:    1.4,
 				EdgeGamma:         1.05,
@@ -141,12 +136,9 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 			geojson.LayerCivic: {
 				Layer:          geojson.LayerCivic,
 				Texture:        textures[geojson.LayerCivic],
-				Tint:           color.NRGBA{R: 200, G: 180, B: 200, A: 255}, // Lighter lavender for civic areas
-				TintStrength:   0.18,                                        // Subtle tint
 				ShadeSigma:     0,
 				ShadeStrength:  0,
-				EdgeColor:      color.NRGBA{R: 140, G: 110, B: 150, A: 255},
-				EdgeStrength:   0.35,
+				EdgeStrength:   0.2,
 				EdgeInnerSigma: 1.0,
 				EdgeOuterSigma: 2.5,
 				EdgeGamma:      1.2,
@@ -154,12 +146,9 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 			geojson.LayerBuildings: {
 				Layer:          geojson.LayerBuildings,
 				Texture:        textures[geojson.LayerCivic], // Use same texture as civic
-				Tint:           color.NRGBA{R: 170, G: 140, B: 180, A: 255}, // Darker lavender for buildings
-				TintStrength:   0.35,                                        // Stronger tint for more contrast
 				ShadeSigma:     0,
 				ShadeStrength:  0,
-				EdgeColor:      color.NRGBA{R: 100, G: 70, B: 120, A: 255}, // Darker edges
-				EdgeStrength:   0.50,                                        // Stronger edges
+				EdgeStrength:   0.2,
 				EdgeInnerSigma: 1.0,
 				EdgeOuterSigma: 2.5,
 				EdgeGamma:      1.2,
@@ -187,17 +176,18 @@ func processMask(baseMask *image.Gray, layer geojson.LayerType, params Params) (
 		layerNoiseStrength = style.MaskNoiseStrength
 	}
 
-	blurred := mask.GaussianBlur(baseMask, layerBlur)
-	noise := mask.GeneratePerlinNoiseWithOffset(params.TileSize, params.TileSize, params.NoiseScale, params.Seed, params.OffsetX, params.OffsetY)
+	// Use per-layer threshold if specified, otherwise use global threshold
+	threshold := params.Threshold
+	if style.MaskThreshold != nil {
+		threshold = *style.MaskThreshold
+	}
+
+	blurred := mask.BoxBlurSigma(baseMask, layerBlur)
 	noisy := blurred
 	if layerNoiseStrength != 0 {
-		noisy = mask.ApplyNoiseToMask(blurred, noise, layerNoiseStrength)
+		noisy = mask.ApplyNoiseToMask(blurred, params.PerlinNoise, layerNoiseStrength)
 	}
-	thresholded := mask.ApplyThreshold(noisy, params.Threshold)
-	finalMask := thresholded
-	if params.AntialiasSigma > 0 {
-		finalMask = mask.AntialiasEdges(thresholded, params.AntialiasSigma)
-	}
+	finalMask := mask.ApplyThresholdWithAntialias(noisy, threshold)
 
 	return finalMask, nil
 }
@@ -219,17 +209,19 @@ func paintFromFinalMask(finalMask *image.Gray, layer geojson.LayerType, params P
 
 	// Texture + mask.
 	tiled := texture.TileTexture(style.Texture, params.TileSize, params.OffsetX, params.OffsetY)
-	tinted := texture.TintTexture(tiled, style.Tint, style.TintStrength)
-	painted := texture.ApplyMaskToTexture(tinted, finalMask)
+	painted := texture.ApplyMaskToTexture(tiled, finalMask)
 
-	// Optional additional shading: blur the final mask further and apply a subtle black overlay.
+	// Optional additional shading: blur the final mask further and apply a subtle darkening.
 	result := painted
 	if style.ShadeSigma > 0 && style.ShadeStrength > 0 {
-		shade := mask.GaussianBlur(finalMask, style.ShadeSigma)
-		result = mask.ApplyEdgeDarkening(result, shade, color.NRGBA{R: 0, G: 0, B: 0, A: 255}, style.ShadeStrength)
+		shade := mask.BoxBlurSigma(finalMask, style.ShadeSigma)
+		// Invert shade mask: we want to darken where the feature IS (high values in finalMask)
+		// ApplySoftEdgeMask expects 255=no change, 0=darken, so invert the blurred mask
+		invertedShade := mask.InvertMask(shade)
+		result = mask.ApplySoftEdgeMask(result, invertedShade, style.ShadeStrength)
 	}
 
-	// Edge darkening.
+	// Edge darkening using soft edge mask (HSL-based darkening).
 	edgeMask := mask.CreateEdgeMask(finalMask, style.EdgeInnerSigma, style.EdgeOuterSigma)
 	if edgeMask == nil {
 		return nil, errors.New("failed to create edge mask")
@@ -237,7 +229,10 @@ func paintFromFinalMask(finalMask *image.Gray, layer geojson.LayerType, params P
 	if style.EdgeGamma != 1.0 {
 		edgeMask = mask.TaperEdgeMask(edgeMask, style.EdgeGamma)
 	}
-	result = mask.ApplyEdgeDarkening(result, edgeMask, style.EdgeColor, style.EdgeStrength)
+	// ApplySoftEdgeMask expects: 255=no change, 0=maximum effect
+	// CreateEdgeMask produces: high values at edges, low in center
+	// So we need to invert: edges should be dark (0) for maximum darkening
+	result = mask.ApplySoftEdgeMask(result, edgeMask, style.EdgeStrength)
 
 	return result, nil
 }

@@ -419,6 +419,75 @@ func TestAntialiasEdges(t *testing.T) {
 	}
 }
 
+// TestApplyThresholdWithAntialias tests the threshold with cubic interpolation antialiasing
+func TestApplyThresholdWithAntialias(t *testing.T) {
+	t.Run("basic_threshold", func(t *testing.T) {
+		// Create a gradient mask (soft edge)
+		mask := image.NewGray(image.Rect(0, 0, 100, 100))
+		for y := 0; y < 100; y++ {
+			for x := 0; x < 100; x++ {
+				// Gradient: 0-255 across the width
+				gray := uint8(float64(x) * 2.55)
+				mask.SetGray(x, y, color.Gray{Y: gray})
+			}
+		}
+
+		// Apply threshold with antialiasing
+		result := ApplyThresholdWithAntialiasAndInvert(mask, 128)
+
+		// Verify dimensions
+		if result.Bounds() != mask.Bounds() {
+			t.Errorf("result bounds %v != mask bounds %v", result.Bounds(), mask.Bounds())
+		}
+
+		// Verify far left is white (inverted: low values become white)
+		if result.GrayAt(0, 50).Y != 255 {
+			t.Errorf("far left should be 255, got %d", result.GrayAt(0, 50).Y)
+		}
+
+		// Verify far right is black (inverted: high values become black)
+		if result.GrayAt(99, 50).Y != 0 {
+			t.Errorf("far right should be 0, got %d", result.GrayAt(99, 50).Y)
+		}
+
+		// Verify transition zone around threshold (128 maps to x≈50)
+		// Values should be smoothly interpolated in the transition zone
+		midVal := result.GrayAt(50, 50).Y
+		if midVal < 100 || midVal > 155 {
+			t.Errorf("middle value should be in transition zone, got %d", midVal)
+		}
+	})
+
+	t.Run("smooth_transitions", func(t *testing.T) {
+		// Create a mask with values around the threshold
+		mask := image.NewGray(image.Rect(0, 0, 50, 50))
+		for y := 0; y < 50; y++ {
+			for x := 0; x < 50; x++ {
+				// Values from 80 to 180 (centered around threshold 128)
+				gray := uint8(80 + float64(x)*2)
+				mask.SetGray(x, y, color.Gray{Y: gray})
+			}
+		}
+
+		result := ApplyThresholdWithAntialiasAndInvert(mask, 128)
+
+		// Verify smooth gradient in output (no hard edges)
+		// Check that adjacent pixels don't jump too much
+		for x := 1; x < 49; x++ {
+			curr := result.GrayAt(x, 25).Y
+			prev := result.GrayAt(x-1, 25).Y
+			diff := int(curr) - int(prev)
+			if diff < 0 {
+				diff = -diff
+			}
+			// Cubic interpolation should create smooth gradients
+			if diff > 30 {
+				t.Errorf("at x=%d: gradient too steep (diff=%d), expected smooth transition", x, diff)
+			}
+		}
+	})
+}
+
 // TestWatercolorPipeline tests the complete watercolor effect pipeline
 func TestWatercolorPipeline(t *testing.T) {
 	// Create a test layer image with a blue feature
@@ -465,4 +534,220 @@ func TestWatercolorPipeline(t *testing.T) {
 
 	// Verify there's a gradient at the edge (watercolor effect)
 	checkGradientAtEdge(t, final)
+}
+
+// TestBoxBlur tests the basic box blur implementation
+func TestBoxBlur(t *testing.T) {
+	// Create a simple binary mask with a sharp edge
+	mask := image.NewGray(image.Rect(0, 0, 10, 10))
+
+	// Left half black (0), right half white (255)
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 10; x++ {
+			if x < 5 {
+				mask.SetGray(x, y, color.Gray{Y: 0})
+			} else {
+				mask.SetGray(x, y, color.Gray{Y: 255})
+			}
+		}
+	}
+
+	// Apply box blur with radius 1
+	blurred := BoxBlur(mask, 1)
+
+	// Verify dimensions preserved
+	if blurred.Bounds() != mask.Bounds() {
+		t.Errorf("blurred bounds %v != mask bounds %v", blurred.Bounds(), mask.Bounds())
+	}
+
+	// Verify far left is still dark
+	leftPixel := blurred.GrayAt(0, 5)
+	if leftPixel.Y > 50 {
+		t.Errorf("far left pixel should be dark (<50), got %d", leftPixel.Y)
+	}
+
+	// Verify far right is still bright
+	rightPixel := blurred.GrayAt(9, 5)
+	if rightPixel.Y < 200 {
+		t.Errorf("far right pixel should be bright (>200), got %d", rightPixel.Y)
+	}
+
+	// Verify edge has been smoothed (middle pixels should be gray)
+	edgePixel := blurred.GrayAt(5, 5)
+	if edgePixel.Y < 50 || edgePixel.Y > 200 {
+		t.Errorf("edge pixel should be gray (50-200), got %d", edgePixel.Y)
+	}
+}
+
+// TestBoxBlurZeroRadius tests that zero/negative radius returns a copy
+func TestBoxBlurZeroRadius(t *testing.T) {
+	mask := image.NewGray(image.Rect(0, 0, 10, 10))
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 10; x++ {
+			mask.SetGray(x, y, color.Gray{Y: uint8(x * 25)})
+		}
+	}
+
+	// Apply box blur with radius 0
+	result := BoxBlur(mask, 0)
+
+	// Verify dimensions preserved
+	if result.Bounds() != mask.Bounds() {
+		t.Errorf("result bounds %v != mask bounds %v", result.Bounds(), mask.Bounds())
+	}
+
+	// Verify pixel values unchanged
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 10; x++ {
+			if result.GrayAt(x, y).Y != mask.GrayAt(x, y).Y {
+				t.Errorf("pixel (%d,%d) changed: %d -> %d", x, y,
+					mask.GrayAt(x, y).Y, result.GrayAt(x, y).Y)
+			}
+		}
+	}
+}
+
+// TestBoxBlurSigma tests the sigma-to-radius conversion and 3-pass blur
+func TestBoxBlurSigma(t *testing.T) {
+	tests := []struct {
+		name  string
+		sigma float32
+		size  int // image size to use
+	}{
+		{"small sigma", 0.5, 20},
+		{"medium sigma", 1.0, 20},
+		{"large sigma", 2.0, 40},
+		{"very large sigma", 4.5, 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a simple binary mask with a sharp edge
+			mask := image.NewGray(image.Rect(0, 0, tt.size, tt.size))
+			half := tt.size / 2
+
+			// Left half black, right half white
+			for y := 0; y < tt.size; y++ {
+				for x := 0; x < tt.size; x++ {
+					if x < half {
+						mask.SetGray(x, y, color.Gray{Y: 0})
+					} else {
+						mask.SetGray(x, y, color.Gray{Y: 255})
+					}
+				}
+			}
+
+			// Apply box blur with sigma
+			blurred := BoxBlurSigma(mask, tt.sigma)
+
+			// Verify dimensions preserved
+			if blurred.Bounds() != mask.Bounds() {
+				t.Errorf("blurred bounds %v != mask bounds %v", blurred.Bounds(), mask.Bounds())
+			}
+
+			// Verify far left is still dark
+			leftPixel := blurred.GrayAt(0, half)
+			if leftPixel.Y > 50 {
+				t.Errorf("far left pixel should be dark (<50), got %d", leftPixel.Y)
+			}
+
+			// Verify far right is still bright
+			rightPixel := blurred.GrayAt(tt.size-1, half)
+			if rightPixel.Y < 200 {
+				t.Errorf("far right pixel should be bright (>200), got %d", rightPixel.Y)
+			}
+
+			// Verify edge has been blurred (middle should be gray)
+			edgePixel := blurred.GrayAt(half, half)
+			if edgePixel.Y < 50 || edgePixel.Y > 200 {
+				t.Errorf("edge pixel should be gray (50-200), got %d", edgePixel.Y)
+			}
+		})
+	}
+}
+
+// TestBoxBlurSigmaZero tests that zero sigma returns a copy
+func TestBoxBlurSigmaZero(t *testing.T) {
+	mask := image.NewGray(image.Rect(0, 0, 10, 10))
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 10; x++ {
+			mask.SetGray(x, y, color.Gray{Y: uint8(x * 25)})
+		}
+	}
+
+	// Apply box blur with sigma 0
+	result := BoxBlurSigma(mask, 0)
+
+	// Verify dimensions preserved
+	if result.Bounds() != mask.Bounds() {
+		t.Errorf("result bounds %v != mask bounds %v", result.Bounds(), mask.Bounds())
+	}
+
+	// Verify pixel values unchanged
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 10; x++ {
+			if result.GrayAt(x, y).Y != mask.GrayAt(x, y).Y {
+				t.Errorf("pixel (%d,%d) changed: %d -> %d", x, y,
+					mask.GrayAt(x, y).Y, result.GrayAt(x, y).Y)
+			}
+		}
+	}
+}
+
+// TestBoxBlurVsGaussianQuality compares box blur quality to Gaussian
+func TestBoxBlurVsGaussianQuality(t *testing.T) {
+	// Create a test mask with a circle
+	size := 100
+	mask := image.NewGray(image.Rect(0, 0, size, size))
+	centerX, centerY := size/2, size/2
+	radius := 30
+
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			dx := x - centerX
+			dy := y - centerY
+			if dx*dx+dy*dy <= radius*radius {
+				mask.SetGray(x, y, color.Gray{Y: 255})
+			} else {
+				mask.SetGray(x, y, color.Gray{Y: 0})
+			}
+		}
+	}
+
+	sigma := float32(2.0)
+
+	// Apply both blurs
+	gaussianBlurred := GaussianBlur(mask, sigma)
+	boxBlurred := BoxBlurSigma(mask, sigma)
+
+	// Both should produce smooth transitions
+	// We don't require exact match, just that both blur the edges
+
+	// Check Gaussian blur created gradient
+	gaussianEdge := gaussianBlurred.GrayAt(centerX+radius, centerY)
+	if gaussianEdge.Y < 10 || gaussianEdge.Y > 245 {
+		t.Errorf("Gaussian blur should create gradient at edge, got %d", gaussianEdge.Y)
+	}
+
+	// Check box blur created gradient
+	boxEdge := boxBlurred.GrayAt(centerX+radius, centerY)
+	if boxEdge.Y < 10 || boxEdge.Y > 245 {
+		t.Errorf("Box blur should create gradient at edge, got %d", boxEdge.Y)
+	}
+
+	// Both should keep center bright
+	if gaussianBlurred.GrayAt(centerX, centerY).Y < 200 {
+		t.Error("Gaussian blur should keep center bright")
+	}
+	if boxBlurred.GrayAt(centerX, centerY).Y < 200 {
+		t.Error("Box blur should keep center bright")
+	}
+
+	// Both should keep far corners dark
+	if gaussianBlurred.GrayAt(0, 0).Y > 50 {
+		t.Error("Gaussian blur should keep corners dark")
+	}
+	if boxBlurred.GrayAt(0, 0).Y > 50 {
+		t.Error("Box blur should keep corners dark")
+	}
 }

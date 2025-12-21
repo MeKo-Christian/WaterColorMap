@@ -357,11 +357,109 @@ Then each layer gets:
 
 ### 5.11 Performance Optimization
 
-- [ ] Profile tile generation performance
-- [ ] Optimize image processing bottlenecks
-- [ ] Reduce memory usage
-- [ ] Optimize database queries
-- [ ] Test end-to-end generation speed
+**Status**: ✅ Profiling complete, optimization roadmap defined
+
+#### 5.11.1 Performance Analysis ✅ COMPLETE
+
+- [x] Create comprehensive benchmark suite (`internal/watercolor/benchmark_test.go`)
+- [x] Run CPU profiling on tile generation pipeline
+- [x] Run memory profiling on tile generation pipeline
+- [x] Analyze bottlenecks and create performance report (`PERFORMANCE_ANALYSIS.md`)
+- [x] Optimize Perlin noise generation (eliminated 6-7x redundant allocations)
+
+**Current Performance** (256x256 tile, 5 layers):
+- Time per tile: ~86ms
+- Memory per tile: ~29MB
+- Allocations: 1.3M
+
+**Key Findings**:
+- Gaussian blur: 39.6% of CPU time (PRIMARY BOTTLENECK)
+- Image buffer allocations: 37.8% of memory (64-bit RGBA overhead)
+- Pixel access overhead: 17.7% of memory (color.NRGBA allocations per At() call)
+- Perlin noise: ✅ Already optimized (40ms saved per tile)
+
+#### 5.11.2 Gaussian Blur Optimization 🔴 CRITICAL
+
+**Target**: Reduce blur time from 39.6% → <20% (Expected gain: 25-35% overall speedup)
+
+- [ ] Research blur algorithm alternatives (Box blur, Kawase blur, IIR blur)
+- [ ] Benchmark alternative algorithms vs current Gaussian blur quality
+- [ ] Implement selected fast blur algorithm
+- [ ] Add quality comparison tests (current vs optimized)
+- [ ] Measure performance improvement
+- [ ] Update golden tests if visual differences exist
+
+**Context**: Gaussian blur is called 15-20 times per tile (mask processing, antialiasing, edge creation for each layer). Replacing with a faster algorithm (2-3x speedup) would significantly improve overall performance.
+
+#### 5.11.3 Memory Allocation Optimization 🟡 HIGH PRIORITY
+
+**Target**: Reduce per-tile memory from 29MB → <20MB (Expected gain: 10-15% speedup via GC reduction)
+
+- [ ] Implement buffer pool for common image sizes (256x256, 512x512)
+- [ ] Add buffer reuse in blur operations (avoid creating new buffers per call)
+- [ ] Profile memory allocations after buffer pooling
+- [ ] Measure GC impact reduction
+- [ ] Document buffer pool usage patterns
+
+**Context**: gift library creates 64-bit RGBA buffers (745MB allocated per benchmark), 4x overhead vs 8-bit buffers. Pooling and reuse can dramatically reduce allocation pressure.
+
+#### 5.11.4 Pixel Access Optimization 🟡 HIGH PRIORITY
+
+**Target**: Eliminate 349MB of temporary color allocations (Expected gain: 5-10% speedup)
+
+- [ ] Identify all hot paths using `image.At()` method
+- [ ] Replace with direct Pix slice access where possible
+- [ ] Implement batch pixel operations to amortize allocations
+- [ ] Profile allocation reduction
+- [ ] Verify correctness with visual regression tests
+
+**Context**: Every `At()` call allocates a new color.NRGBA struct. Direct slice access via `img.Pix` is allocation-free.
+
+#### 5.11.5 Parallel Layer Processing 🟢 MEDIUM PRIORITY
+
+**Target**: Utilize multi-core CPUs (Expected gain: 30-50% on multi-core systems)
+
+- [ ] Identify independent layers that can be processed in parallel
+- [ ] Implement goroutine-based parallel layer painting
+- [ ] Add synchronization for shared resources (noise texture, textures)
+- [ ] Benchmark single-core vs multi-core performance
+- [ ] Test correctness with parallel processing enabled
+- [ ] Document parallelization strategy and trade-offs
+
+**Context**: Water, land, parks, civic layers can be painted independently. Roads/highways depend on land mask but could still be parallelized after land completes.
+
+#### 5.11.6 Texture Processing Optimization 🟢 LOW PRIORITY
+
+**Target**: Reduce texture tiling overhead (Expected gain: 3-5% speedup)
+
+- [ ] Implement texture atlas (single large texture, UV mapping)
+- [ ] Add lazy texture tiling (on-demand vs upfront)
+- [ ] Profile texture operation performance
+- [ ] Measure memory reduction from atlas approach
+
+**Context**: TileTexture allocates 175MB per benchmark. Texture atlasing could reduce allocations and improve cache locality.
+
+#### 5.11.7 SIMD Optimization 🟢 FUTURE ENHANCEMENT
+
+**Target**: Accelerate pixel-level operations (Expected gain: 10-20% for specific operations)
+
+- [ ] Research Go SIMD libraries (avo, gonum)
+- [ ] Identify SIMD-friendly operations (pixel blending, noise application)
+- [ ] Implement SIMD versions of hot functions
+- [ ] Benchmark SIMD vs scalar performance
+- [ ] Ensure cross-platform compatibility
+
+**Context**: Bulk pixel operations (noise blending, edge darkening) could benefit from SIMD. Lower priority due to implementation complexity.
+
+#### 5.11.8 Performance Monitoring & Regression Testing
+
+- [ ] Add continuous benchmark tracking to CI
+- [ ] Set performance budgets (max time/memory per tile)
+- [ ] Create performance regression tests
+- [ ] Document performance characteristics per zoom level
+- [ ] Add performance dashboard/reporting
+
+**Combined Expected Speedup**: 50-70% faster (86ms → 40-50ms per tile)
 
 ### 5.12 Documentation and Deployment
 

@@ -19,7 +19,7 @@ func solidTexture(w, h int, c color.NRGBA) image.Image {
 }
 
 func TestPaintLayerAppliesMaskTintAndEdge(t *testing.T) {
-	tileSize := 16
+	tileSize := 32  // Increased from 16 for better edge halo visibility with box blur
 	layer := geojson.LayerWater
 
 	baseColor := color.NRGBA{R: 100, G: 100, B: 100, A: 255}
@@ -36,19 +36,16 @@ func TestPaintLayerAppliesMaskTintAndEdge(t *testing.T) {
 	params.OffsetY = 0
 
 	style := params.Styles[layer]
-	style.Tint = color.NRGBA{R: 200, G: 50, B: 50, A: 255}
-	style.TintStrength = 0.4
-	style.EdgeColor = color.NRGBA{R: 60, G: 40, B: 30, A: 255}
-	style.EdgeStrength = 0.5
+	style.EdgeStrength = 0.6 // Increased from 0.5 for stronger darkening
 	style.EdgeInnerSigma = 0.5
-	style.EdgeOuterSigma = 2.0
+	style.EdgeOuterSigma = 3.5 // Increased for box blur visibility
 	style.EdgeGamma = 1.0
 	params.Styles[layer] = style
 
-	// Build a simple square feature mask
+	// Build a simple square feature mask (centered, larger)
 	layerImg := image.NewRGBA(image.Rect(0, 0, tileSize, tileSize))
-	for y := 4; y < 12; y++ {
-		for x := 4; x < 12; x++ {
+	for y := 8; y < 24; y++ {
+		for x := 8; x < 24; x++ {
 			layerImg.Set(x, y, color.RGBA{R: 0, G: 0, B: 255, A: 255})
 		}
 	}
@@ -66,16 +63,12 @@ func TestPaintLayerAppliesMaskTintAndEdge(t *testing.T) {
 		t.Fatalf("expected outside alpha 0, got %d", got.A)
 	}
 
-	// Center should be tinted (may be slightly darkened depending on halo spread)
-	center := out.NRGBAAt(8, 8)
-	expectedTint := color.NRGBA{
-		R: uint8(0.6*float64(baseColor.R) + 0.4*float64(style.Tint.R)),
-		G: uint8(0.6*float64(baseColor.G) + 0.4*float64(style.Tint.G)),
-		B: uint8(0.6*float64(baseColor.B) + 0.4*float64(style.Tint.B)),
-		A: 255,
-	}
-	if (center.R > expectedTint.R || center.G > expectedTint.G || center.B > expectedTint.B) || center.A != 255 {
-		t.Fatalf("unexpected center color %+v, expected tinted (<= %+v) with alpha 255", center, expectedTint)
+	// Center should show the base texture color (no tinting anymore)
+	center := out.NRGBAAt(16, 16)
+	// The center should have the base color from texture (possibly slightly darker from edge effects)
+	// but should not be transparent
+	if center.A != 255 {
+		t.Fatalf("unexpected center alpha %d, expected 255", center.A)
 	}
 
 	// Edge region should include darker pixels than center due to halo darkening

@@ -1,5 +1,3 @@
-github.com/MeKo-Christian/go-overpass v0.0.0-20251215140656-c8487ded5547 h1:NoqbTaABSYpguJbLXhDPLIktZXoypW/JlCi/4jDlWxI=
-github.com/MeKo-Christian/go-overpass v0.0.0-20251215140656-c8487ded5547/go.mod h1:Q/du99UvIJBFpHMaD6Uc6crVvltDPTj+HVenGFdsE4Q=
 github.com/MeKo-Christian/go-overpass v0.0.0-20251220122618-2dfca379d0cd h1:RSLorSKdOXfxT1bxRXa8Yfb3oq1W1rLTDXIadQoOLnk=
 github.com/MeKo-Christian/go-overpass v0.0.0-20251220122618-2dfca379d0cd/go.mod h1:Q/du99UvIJBFpHMaD6Uc6crVvltDPTj+HVenGFdsE4Q=
 github.com/aquilax/go-perlin v1.1.0 h1:Gg+3jQ24wT4Y5GI7TCRLmYarzUG0k+n/JATFqOimb7s=

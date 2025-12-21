@@ -14,7 +14,7 @@ var DefaultLayerTextures = map[geojson.LayerType]string{
 	geojson.LayerWater:    "water.png",
 	geojson.LayerParks:    "green.png",
 	geojson.LayerCivic:    "lilac.png",
-	geojson.LayerRoads:    "white.png",
+	geojson.LayerRoads:    "gray.png",
 	geojson.LayerHighways: "yellow.png",
 	geojson.LayerPaper:    "white.png",
 }

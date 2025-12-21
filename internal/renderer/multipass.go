@@ -98,12 +98,14 @@ func (r *MultiPassRenderer) RenderTile(coords tile.Coords, data *types.TileData)
 
 	// Define the layers to render in order
 	layers := []geojson.LayerType{
-		geojson.LayerLand,     // Background layer (just background color)
-		geojson.LayerWater,    // Water bodies
-		geojson.LayerParks,    // Parks and green spaces
-		geojson.LayerCivic,    // Buildings and civic areas
-		geojson.LayerRoads,    // All roads (white mask; used for cutouts)
-		geojson.LayerHighways, // Major roads/highways (yellow)
+		geojson.LayerLand,      // Background layer (just background color)
+		geojson.LayerWater,     // Water bodies
+		geojson.LayerRivers,    // Rivers and streams (linear waterways)
+		geojson.LayerParks,     // Parks and green spaces
+		geojson.LayerCivic,     // Civic buildings and areas
+		geojson.LayerBuildings, // Buildings (darker lavender)
+		geojson.LayerRoads,     // All roads (white mask; used for cutouts)
+		geojson.LayerHighways,  // Major roads/highways (yellow)
 	}
 
 	// Get bounds for the tile and expand when rendering a metatile.

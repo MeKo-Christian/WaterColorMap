@@ -38,14 +38,21 @@ func NewRenderer(zoom int, tileSize int, canvasW int, canvasH int, offsetX int, 
 func (r *Renderer) RenderLayers(fc types.FeatureCollection) map[geojson.LayerType]*image.NRGBA {
 	b := image.Rect(0, 0, r.canvasW, r.canvasH)
 	water := image.NewNRGBA(b)
+	rivers := image.NewNRGBA(b)
 	parks := image.NewNRGBA(b)
 	civic := image.NewNRGBA(b)
 	roads := image.NewNRGBA(b)
 	highways := image.NewNRGBA(b)
 
-	// Water polygons/lines
+	// Water polygons (lakes, ponds, coastlines)
 	for i := range fc.Water {
-		r.renderFeature(water, &fc.Water[i], 6)
+		r.renderFeature(water, &fc.Water[i], r.getWaterStrokeWidth())
+	}
+
+	// Rivers (linear waterways: rivers, streams, canals)
+	// Rendered with LineSymbolizer to avoid polygon closing issues
+	for i := range fc.Rivers {
+		r.renderFeature(rivers, &fc.Rivers[i], r.getRiverStrokeWidth())
 	}
 
 	// Parks polygons
@@ -64,15 +71,16 @@ func (r *Renderer) RenderLayers(fc types.FeatureCollection) map[geojson.LayerTyp
 	// Roads + derived highways
 	for i := range fc.Roads {
 		f := &fc.Roads[i]
-		if isHighway(f) {
-			r.renderFeature(highways, f, 4)
+		if r.isHighway(f) {
+			r.renderFeature(highways, f, r.getHighwayStrokeWidth())
 		} else {
-			r.renderFeature(roads, f, 3)
+			r.renderFeature(roads, f, r.getRoadStrokeWidth())
 		}
 	}
 
 	return map[geojson.LayerType]*image.NRGBA{
 		geojson.LayerWater:    water,
+		geojson.LayerRivers:   rivers,
 		geojson.LayerParks:    parks,
 		geojson.LayerCivic:    civic,
 		geojson.LayerRoads:    roads,
@@ -80,16 +88,124 @@ func (r *Renderer) RenderLayers(fc types.FeatureCollection) map[geojson.LayerTyp
 	}
 }
 
-func isHighway(f *types.Feature) bool {
+func (r *Renderer) isHighway(f *types.Feature) bool {
 	if f == nil || f.Properties == nil {
 		return false
 	}
 	hw, _ := f.Properties["highway"].(string)
+
+	// At very low zoom (z <= 7), don't show any highways
+	if r.zoom <= 7 {
+		return false
+	}
+
+	// At low zoom (z8-9), only show motorways and trunks
+	if r.zoom <= 9 {
+		switch hw {
+		case "motorway", "motorway_link", "trunk", "trunk_link":
+			return true
+		default:
+			return false
+		}
+	}
+
+	// At medium-low zoom (z10-11), add primary roads
+	if r.zoom <= 11 {
+		switch hw {
+		case "motorway", "motorway_link", "trunk", "trunk_link",
+			"primary", "primary_link":
+			return true
+		default:
+			return false
+		}
+	}
+
+	// At medium zoom (z12-14), add secondary roads
+	if r.zoom <= 14 {
+		switch hw {
+		case "motorway", "motorway_link", "trunk", "trunk_link",
+			"primary", "primary_link", "secondary", "secondary_link":
+			return true
+		default:
+			return false
+		}
+	}
+
+	// At high zoom (z15+), also treat tertiary roads as highways
 	switch hw {
-	case "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link", "secondary", "secondary_link":
+	case "motorway", "motorway_link", "trunk", "trunk_link",
+		"primary", "primary_link", "secondary", "secondary_link",
+		"tertiary", "tertiary_link":
 		return true
 	default:
 		return false
+	}
+}
+
+// getHighwayStrokeWidth returns the stroke width for highways based on zoom level.
+// Ensures highways are always visible with 1-2 pixel minimum width.
+func (r *Renderer) getHighwayStrokeWidth() int {
+	switch {
+	case r.zoom <= 9:
+		return 1 // Minimum visibility at very low zoom
+	case r.zoom <= 11:
+		return 2 // Slightly thicker for low-medium zoom
+	case r.zoom <= 13:
+		return 2 // Medium zoom
+	case r.zoom <= 15:
+		return 3 // Medium-high zoom
+	default:
+		return 4 // High zoom (original width)
+	}
+}
+
+// getRoadStrokeWidth returns the stroke width for regular roads based on zoom level.
+// Roads are generally slightly thinner than highways.
+func (r *Renderer) getRoadStrokeWidth() int {
+	switch {
+	case r.zoom <= 11:
+		return 1 // Minimum visibility at low zoom
+	case r.zoom <= 13:
+		return 2 // Medium zoom
+	case r.zoom <= 15:
+		return 2 // Medium-high zoom
+	default:
+		return 3 // High zoom (original width)
+	}
+}
+
+// getWaterStrokeWidth returns the stroke width for water polygons based on zoom level.
+// This applies to polygonal water bodies (lakes, ponds, coastlines).
+func (r *Renderer) getWaterStrokeWidth() int {
+	switch {
+	case r.zoom <= 9:
+		return 2 // Small water bodies visible at low zoom
+	case r.zoom <= 11:
+		return 3 // Low-medium zoom
+	case r.zoom <= 13:
+		return 4 // Medium zoom
+	case r.zoom <= 15:
+		return 5 // Medium-high zoom
+	default:
+		return 6 // High zoom (original width)
+	}
+}
+
+// getRiverStrokeWidth returns the stroke width for linear waterways based on zoom level.
+// This applies to rivers, streams, and canals.
+// Zoom-dependent filtering ensures only major rivers show at low zoom.
+func (r *Renderer) getRiverStrokeWidth() int {
+	switch {
+	case r.zoom <= 9:
+		return 1 // Major rivers only, minimum width
+	case r.zoom <= 11:
+		return 1 // Low-medium zoom
+	case r.zoom <= 13:
+		return 2 // Medium zoom
+	case r.zoom <= 15:
+		return 3 // Medium-high zoom
+	default:
+		return 4 // High zoom
 	}
 }
 

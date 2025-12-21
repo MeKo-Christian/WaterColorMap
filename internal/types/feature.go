@@ -31,7 +31,8 @@ type Feature struct {
 
 // FeatureCollection groups features by type
 type FeatureCollection struct {
-	Water     []Feature // Lakes, rivers, coastlines
+	Water     []Feature // Polygonal water bodies (lakes, ponds)
+	Rivers    []Feature // Linear waterways (rivers, streams, canals)
 	Parks     []Feature // Parks, forests, green spaces
 	Roads     []Feature // Streets, highways
 	Buildings []Feature // Building footprints

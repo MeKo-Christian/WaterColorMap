@@ -86,6 +86,38 @@ func MinMask(a, b *image.Gray) *image.Gray {
 	return out
 }
 
+// MinMaskRGBA applies a grayscale mask to an NRGBA image by taking the minimum
+// of the image's alpha channel and the mask value at each pixel.
+// RGB values are preserved; only alpha is modified.
+func MinMaskRGBA(img *image.NRGBA, mask *image.Gray) *image.NRGBA {
+	if img == nil || mask == nil {
+		return nil
+	}
+	if img.Bounds() != mask.Bounds() {
+		return nil
+	}
+
+	bounds := img.Bounds()
+	out := image.NewNRGBA(bounds)
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			c := img.NRGBAAt(x, y)
+			maskVal := mask.GrayAt(x, y).Y
+			alpha := c.A
+			if maskVal < alpha {
+				alpha = maskVal
+			}
+			out.SetNRGBA(x, y, color.NRGBA{
+				R: c.R,
+				G: c.G,
+				B: c.B,
+				A: alpha,
+			})
+		}
+	}
+	return out
+}
+
 // InvertMask inverts a grayscale mask (Y -> 255-Y).
 func InvertMask(m *image.Gray) *image.Gray {
 	if m == nil {
@@ -245,9 +277,221 @@ func ApplyThreshold(mask *image.Gray, threshold uint8) *image.Gray {
 	return result
 }
 
+// ApplyThresholdWithAntialias applies a threshold with smooth antialiased edges.
+// Uses a fixed transition zone with cubic interpolation (smootherstep) for natural-looking edges.
+// The transition zone is 20 gray levels on each side of the threshold value.
+func ApplyThresholdWithAntialias(mask *image.Gray, threshold uint8) *image.Gray {
+	bounds := mask.Bounds()
+	result := image.NewGray(bounds)
+
+	// Transition zone: 20 gray levels on each side of threshold
+	const transitionWidth = 20
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			val := mask.GrayAt(x, y).Y
+
+			// Smooth threshold with cubic interpolation
+			lower := int(threshold) - transitionWidth
+			upper := int(threshold) + transitionWidth
+
+			var outVal uint8
+			if int(val) <= lower {
+				outVal = 0
+			} else if int(val) >= upper {
+				outVal = 255
+			} else {
+				// Cubic interpolation: smootherstep (3t² - 2t³)
+				t := float32(int(val)-lower) / float32(2*transitionWidth)
+				smoothT := t * t * (3.0 - 2.0*t)
+				outVal = uint8((smoothT) * 255.0)
+			}
+			result.SetGray(x, y, color.Gray{Y: outVal})
+		}
+	}
+
+	return result
+}
+
+// ApplyThresholdWithAntialiasAndInvert applies a threshold with smooth antialiased edges.
+// Uses a fixed transition zone with cubic interpolation (smootherstep) for natural-looking edges.
+// The transition zone is 20 gray levels on each side of the threshold value.
+func ApplyThresholdWithAntialiasAndInvert(mask *image.Gray, threshold uint8) *image.Gray {
+	bounds := mask.Bounds()
+	result := image.NewGray(bounds)
+
+	// Transition zone: 20 gray levels on each side of threshold
+	const transitionWidth = 20
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			val := mask.GrayAt(x, y).Y
+
+			// Smooth threshold with cubic interpolation
+			lower := int(threshold) - transitionWidth
+			upper := int(threshold) + transitionWidth
+
+			var outVal uint8
+			if int(val) <= lower {
+				outVal = 255
+			} else if int(val) >= upper {
+				outVal = 0
+			} else {
+				// Cubic interpolation: smootherstep (3t² - 2t³)
+				t := float32(int(val)-lower) / float32(2*transitionWidth)
+				smoothT := t * t * (3.0 - 2.0*t)
+				outVal = uint8((1.0 - smoothT) * 255.0)
+			}
+			result.SetGray(x, y, color.Gray{Y: outVal})
+		}
+	}
+
+	return result
+}
+
+// BoxBlur applies a fast box blur with the given radius using a sliding window algorithm.
+// This is significantly faster than Gaussian blur (O(1) per pixel vs O(k) per pixel).
+// The blur is applied in two separable passes (horizontal then vertical).
+func BoxBlur(mask *image.Gray, radius int) *image.Gray {
+	if radius < 1 {
+		// No blur needed, return a copy
+		bounds := mask.Bounds()
+		dst := image.NewGray(bounds)
+		copy(dst.Pix, mask.Pix)
+		return dst
+	}
+
+	bounds := mask.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Temporary buffer for horizontal pass
+	temp := image.NewGray(bounds)
+
+	// Horizontal pass
+	for y := 0; y < height; y++ {
+		// Sliding window sum
+		sum := 0
+		count := 0
+
+		// Initialize window
+		for x := -radius; x <= radius; x++ {
+			if x >= 0 && x < width {
+				idx := y*mask.Stride + x
+				sum += int(mask.Pix[idx])
+				count++
+			}
+		}
+
+		// First pixel
+		temp.Pix[y*temp.Stride] = uint8(sum / count)
+
+		// Slide window across row
+		for x := 1; x < width; x++ {
+			// Remove left pixel from window
+			leftX := x - radius - 1
+			if leftX >= 0 {
+				idx := y*mask.Stride + leftX
+				sum -= int(mask.Pix[idx])
+				count--
+			}
+
+			// Add right pixel to window
+			rightX := x + radius
+			if rightX < width {
+				idx := y*mask.Stride + rightX
+				sum += int(mask.Pix[idx])
+				count++
+			}
+
+			temp.Pix[y*temp.Stride+x] = uint8(sum / count)
+		}
+	}
+
+	// Vertical pass (on temp -> dst)
+	dst := image.NewGray(bounds)
+
+	for x := 0; x < width; x++ {
+		// Sliding window sum
+		sum := 0
+		count := 0
+
+		// Initialize window
+		for y := -radius; y <= radius; y++ {
+			if y >= 0 && y < height {
+				idx := y*temp.Stride + x
+				sum += int(temp.Pix[idx])
+				count++
+			}
+		}
+
+		// First pixel
+		dst.Pix[x] = uint8(sum / count)
+
+		// Slide window down column
+		for y := 1; y < height; y++ {
+			// Remove top pixel from window
+			topY := y - radius - 1
+			if topY >= 0 {
+				idx := topY*temp.Stride + x
+				sum -= int(temp.Pix[idx])
+				count--
+			}
+
+			// Add bottom pixel to window
+			bottomY := y + radius
+			if bottomY < height {
+				idx := bottomY*temp.Stride + x
+				sum += int(temp.Pix[idx])
+				count++
+			}
+
+			dst.Pix[y*dst.Stride+x] = uint8(sum / count)
+		}
+	}
+
+	return dst
+}
+
+// BoxBlurSigma applies a 3-pass box blur to approximate a Gaussian blur.
+// This is optimized for small sigma values (σ < 5) and provides significant
+// performance improvement over true Gaussian blur while maintaining good quality.
+//
+// The function converts sigma to box radius using the formula:
+// r = sqrt((12 * σ² / N) + 1) where N = 3 (number of passes)
+//
+// Expected speedup: 3-7x faster than Gaussian blur for σ < 5.
+func BoxBlurSigma(mask *image.Gray, sigma float32) *image.Gray {
+	if sigma <= 0 {
+		// No blur needed, return a copy
+		bounds := mask.Bounds()
+		dst := image.NewGray(bounds)
+		copy(dst.Pix, mask.Pix)
+		return dst
+	}
+
+	// Convert sigma to box radius for 3-pass approximation
+	// Formula: r = sqrt((12 * σ² / N) + 1) where N = 3
+	sigmaSquared := float64(sigma) * float64(sigma)
+	radiusFloat := math.Sqrt((12.0*sigmaSquared)/3.0 + 1.0)
+	radius := int(radiusFloat)
+
+	// Ensure minimum radius of 1
+	if radius < 1 {
+		radius = 1
+	}
+
+	// Apply box blur 3 times to approximate Gaussian
+	result := BoxBlur(mask, radius)
+	result = BoxBlur(result, radius)
+	result = BoxBlur(result, radius)
+
+	return result
+}
+
 // AntialiasEdges applies subtle antialiasing to smooth sharp mask edges.
-// This is essentially a light Gaussian blur to soften transitions.
+// This is essentially a light blur to soften transitions.
 func AntialiasEdges(mask *image.Gray, sigma float32) *image.Gray {
-	// Reuse GaussianBlur with a small sigma for antialiasing
-	return GaussianBlur(mask, sigma)
+	// Use BoxBlurSigma for fast antialiasing
+	return BoxBlurSigma(mask, sigma)
 }

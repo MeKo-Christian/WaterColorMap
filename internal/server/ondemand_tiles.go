@@ -137,7 +137,7 @@ func (t *OnDemandTiles) serveTile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	_, _, err = gen.Generate(ctx, coords, force, suffix)
+	_, _, err = gen.Generate(ctx, coords, force, suffix, nil)
 	if err != nil {
 		t.log().Error("failed to generate tile", "coords", coords.String(), "suffix", suffix, "error", err)
 		http.Error(w, fmt.Sprintf("failed to generate tile %s: %v", coords.String()+suffix, err), http.StatusBadGateway)

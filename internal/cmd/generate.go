@@ -181,7 +181,7 @@ func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName str
 		return fmt.Errorf("failed to init generator: %w", err)
 	}
 
-	path, layersDir, err := gen.Generate(context.Background(), coords, force, "")
+	path, layersDir, err := gen.Generate(context.Background(), coords, force, "", nil)
 	if err != nil {
 		return fmt.Errorf("failed to generate tile: %w", err)
 	}
@@ -200,7 +200,7 @@ func runSingleGenerate(zoom, x, y int, force bool, outputDir, dataSourceName str
 		if err != nil {
 			return fmt.Errorf("failed to init hidpi generator: %w", err)
 		}
-		path2x, _, err := gen2x.Generate(context.Background(), coords, force, "@2x")
+		path2x, _, err := gen2x.Generate(context.Background(), coords, force, "@2x", nil)
 		if err != nil {
 			return fmt.Errorf("failed to generate hidpi tile: %w", err)
 		}

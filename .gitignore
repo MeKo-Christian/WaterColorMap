@@ -47,3 +47,6 @@ local.yaml
 
 # Build artifacts
 dist/
+
+# Profiling data
+*.prof
