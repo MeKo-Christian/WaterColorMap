@@ -15,6 +15,20 @@ func ApplySoftEdgeMask(base *image.NRGBA, mask *image.Gray, strength float64) *i
 		return nil
 	}
 
+	bounds := base.Bounds()
+	dst := image.NewNRGBA(bounds)
+	ApplySoftEdgeMaskInto(base, mask, strength, dst)
+	return dst
+}
+
+// ApplySoftEdgeMaskInto applies a soft edge darkening effect into an existing destination buffer.
+// This avoids allocation when the caller can reuse a buffer.
+// The dst buffer must have the same bounds as base.
+func ApplySoftEdgeMaskInto(base *image.NRGBA, mask *image.Gray, strength float64, dst *image.NRGBA) {
+	if base == nil || mask == nil || dst == nil {
+		return
+	}
+
 	if strength < 0 {
 		strength = 0
 	}
@@ -23,7 +37,6 @@ func ApplySoftEdgeMask(base *image.NRGBA, mask *image.Gray, strength float64) *i
 	}
 
 	bounds := base.Bounds()
-	dst := image.NewNRGBA(bounds)
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -56,8 +69,6 @@ func ApplySoftEdgeMask(base *image.NRGBA, mask *image.Gray, strength float64) *i
 			})
 		}
 	}
-
-	return dst
 }
 
 // MultiplyRGBByMask multiplies the RGB color values of an image by a grayscale mask.

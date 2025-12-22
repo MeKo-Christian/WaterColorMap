@@ -10,6 +10,44 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/texture"
 )
 
+// ProcessorContext holds reusable buffers for watercolor processing.
+// Reusing these buffers across multiple calls significantly reduces allocations.
+type ProcessorContext struct {
+	distCtx   *mask.DistanceContext
+	tiledTex  *image.NRGBA // buffer for tiled texture
+	painted   *image.NRGBA // buffer for painted result
+	tempNRGBA *image.NRGBA // temporary NRGBA buffer for edge operations
+	tempGray  *image.Gray  // temporary Gray buffer for inverted mask
+	tileSize  int          // current buffer size
+}
+
+// NewProcessorContext creates a context sized for the given tile size.
+func NewProcessorContext(tileSize int) *ProcessorContext {
+	bounds := image.Rect(0, 0, tileSize, tileSize)
+	return &ProcessorContext{
+		distCtx:   mask.NewDistanceContext(tileSize),
+		tiledTex:  image.NewNRGBA(bounds),
+		painted:   image.NewNRGBA(bounds),
+		tempNRGBA: image.NewNRGBA(bounds),
+		tempGray:  image.NewGray(bounds),
+		tileSize:  tileSize,
+	}
+}
+
+// EnsureCapacity grows buffers if needed for the given tile size.
+func (c *ProcessorContext) EnsureCapacity(tileSize int) {
+	if tileSize <= c.tileSize {
+		return
+	}
+	bounds := image.Rect(0, 0, tileSize, tileSize)
+	c.distCtx.EnsureCapacity(tileSize, tileSize)
+	c.tiledTex = image.NewNRGBA(bounds)
+	c.painted = image.NewNRGBA(bounds)
+	c.tempNRGBA = image.NewNRGBA(bounds)
+	c.tempGray = image.NewGray(bounds)
+	c.tileSize = tileSize
+}
+
 // LayerStyle defines per-layer watercolor styling parameters.
 type LayerStyle struct {
 	Texture           image.Image
@@ -201,6 +239,12 @@ func processMask(baseMask *image.Gray, layer geojson.LayerType, params Params) (
 }
 
 func paintFromFinalMask(finalMask *image.Gray, layer geojson.LayerType, params Params) (*image.NRGBA, error) {
+	// Create a temporary context for this call
+	ctx := NewProcessorContext(params.TileSize)
+	return paintFromFinalMaskWithContext(finalMask, layer, params, ctx)
+}
+
+func paintFromFinalMaskWithContext(finalMask *image.Gray, layer geojson.LayerType, params Params, ctx *ProcessorContext) (*image.NRGBA, error) {
 	style, ok := params.Styles[layer]
 	if !ok {
 		return nil, fmt.Errorf("missing style for layer %s", layer)
@@ -215,18 +259,25 @@ func paintFromFinalMask(finalMask *image.Gray, layer geojson.LayerType, params P
 		return nil, errors.New("final mask is nil")
 	}
 
-	// Texture + mask.
-	tiled := texture.TileTexture(style.Texture, params.TileSize, params.OffsetX, params.OffsetY)
-	painted := texture.ApplyMaskToTexture(tiled, finalMask)
+	// Ensure context has enough capacity
+	ctx.EnsureCapacity(params.TileSize)
+
+	// Texture + mask using pooled buffers
+	texture.TileTextureInto(style.Texture, params.TileSize, params.OffsetX, params.OffsetY, ctx.tiledTex)
+	texture.ApplyMaskToTextureInto(ctx.tiledTex, finalMask, ctx.painted)
+
+	// result points to the current result buffer; we'll swap between painted and tempNRGBA
+	result := ctx.painted
 
 	// Optional additional shading: blur the final mask further and apply a subtle darkening.
-	result := painted
 	if style.ShadeSigma > 0 && style.ShadeStrength > 0 {
 		shade := mask.BoxBlurSigma(finalMask, style.ShadeSigma)
 		// Invert shade mask: we want to darken where the feature IS (high values in finalMask)
 		// ApplySoftEdgeMask expects 255=no change, 0=darken, so invert the blurred mask
-		invertedShade := mask.InvertMask(shade)
-		result = mask.ApplySoftEdgeMask(result, invertedShade, style.ShadeStrength)
+		mask.InvertMaskInto(shade, ctx.tempGray)
+		mask.ApplySoftEdgeMaskInto(result, ctx.tempGray, style.ShadeStrength, ctx.tempNRGBA)
+		// Swap buffers
+		result, ctx.tempNRGBA = ctx.tempNRGBA, result
 	}
 
 	// Edge darkening using distance-based edge mask
@@ -237,15 +288,20 @@ func paintFromFinalMask(finalMask *image.Gray, layer geojson.LayerType, params P
 		gamma = 1.0
 	}
 
-	edgeMask := mask.CreateDistanceEdgeMask(finalMask, radius, gamma)
+	edgeMask := mask.CreateDistanceEdgeMaskWithContext(finalMask, radius, gamma, ctx.distCtx)
 	if edgeMask == nil {
 		return nil, errors.New("failed to create edge mask")
 	}
 	// ApplySoftEdgeMask expects: 255=no change, 0=maximum effect
 	// CreateDistanceEdgeMask produces: 255=no effect (center), 0=max effect (edges)
-	result = mask.ApplySoftEdgeMask(result, edgeMask, style.EdgeStrength)
+	mask.ApplySoftEdgeMaskInto(result, edgeMask, style.EdgeStrength, ctx.tempNRGBA)
 
-	return result, nil
+	// Return a copy since ctx.tempNRGBA will be reused
+	bounds := ctx.tempNRGBA.Bounds()
+	output := image.NewNRGBA(bounds)
+	copy(output.Pix, ctx.tempNRGBA.Pix)
+
+	return output, nil
 }
 
 // PaintLayer applies the watercolor pipeline to a single rendered layer image.

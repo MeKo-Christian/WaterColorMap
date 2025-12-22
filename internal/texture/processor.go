@@ -59,15 +59,25 @@ func TileTexture(src image.Image, tileSize int, offsetX, offsetY int) *image.NRG
 		return nil
 	}
 
+	dst := image.NewNRGBA(image.Rect(0, 0, tileSize, tileSize))
+	TileTextureInto(src, tileSize, offsetX, offsetY, dst)
+	return dst
+}
+
+// TileTextureInto tiles a source texture into an existing destination buffer.
+// This avoids allocation when the caller can reuse a buffer.
+func TileTextureInto(src image.Image, tileSize int, offsetX, offsetY int, dst *image.NRGBA) {
+	if src == nil || tileSize <= 0 || dst == nil {
+		return
+	}
+
 	bounds := src.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
 
 	if width == 0 || height == 0 {
-		return image.NewNRGBA(image.Rect(0, 0, tileSize, tileSize))
+		return
 	}
-
-	dst := image.NewNRGBA(image.Rect(0, 0, tileSize, tileSize))
 
 	mod := func(a, b int) int {
 		r := a % b
@@ -84,8 +94,6 @@ func TileTexture(src image.Image, tileSize int, offsetX, offsetY int) *image.NRG
 			dst.SetNRGBA(x, y, getNRGBA(src, sx, sy))
 		}
 	}
-
-	return dst
 }
 
 // ApplyMaskToTexture applies a grayscale mask as the alpha channel to a texture.
@@ -96,13 +104,23 @@ func ApplyMaskToTexture(tex image.Image, mask *image.Gray) *image.NRGBA {
 	}
 
 	dst := image.NewNRGBA(mask.Bounds())
+	ApplyMaskToTextureInto(tex, mask, dst)
+	return dst
+}
+
+// ApplyMaskToTextureInto applies a grayscale mask as the alpha channel into an existing buffer.
+// This avoids allocation when the caller can reuse a buffer.
+func ApplyMaskToTextureInto(tex image.Image, mask *image.Gray, dst *image.NRGBA) {
+	if tex == nil || mask == nil || dst == nil {
+		return
+	}
 
 	texBounds := tex.Bounds()
 	texW := texBounds.Dx()
 	texH := texBounds.Dy()
 
 	if texW == 0 || texH == 0 {
-		return dst
+		return
 	}
 
 	mod := func(a, b int) int {
@@ -124,8 +142,6 @@ func ApplyMaskToTexture(tex image.Image, mask *image.Gray) *image.NRGBA {
 			dst.SetNRGBA(x, y, c)
 		}
 	}
-
-	return dst
 }
 
 // TintTexture overlays a tint color onto a texture with the given strength (0-1).

@@ -154,6 +154,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		"max_concurrent_generations", maxConc,
 	)
 
+	// Print the URL directly for easy access
+	fmt.Printf("\n  → http://%s/demo/\n\n", addr)
+
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	return srv.ListenAndServe()
 }

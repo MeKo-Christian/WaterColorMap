@@ -142,13 +142,23 @@ func InvertMask(m *image.Gray) *image.Gray {
 	}
 	bounds := m.Bounds()
 	out := image.NewGray(bounds)
+	InvertMaskInto(m, out)
+	return out
+}
+
+// InvertMaskInto inverts a grayscale mask into an existing destination buffer.
+// This avoids allocation when the caller can reuse a buffer.
+func InvertMaskInto(m *image.Gray, dst *image.Gray) {
+	if m == nil || dst == nil {
+		return
+	}
+	bounds := m.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			v := m.GrayAt(x, y).Y
-			out.SetGray(x, y, color.Gray{Y: 255 - v})
+			dst.SetGray(x, y, color.Gray{Y: 255 - v})
 		}
 	}
-	return out
 }
 
 // ExtractBinaryMask converts a colored layer image into a binary mask.

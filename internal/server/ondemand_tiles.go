@@ -32,12 +32,21 @@ type OnDemandTilesConfig struct {
 }
 
 type OnDemandTiles struct {
-	ds     pipeline.DataSource
-	logger *slog.Logger
-	sem    chan struct{}
-	locks  sync.Map
-	gens   sync.Map
-	cfg    OnDemandTilesConfig
+	ds          pipeline.DataSource
+	logger      *slog.Logger
+	sem         chan struct{}
+	locks       sync.Map
+	gens        sync.Map
+	cfg         OnDemandTilesConfig
+	retryQueue  chan retryJob
+	retryCtx    context.Context
+	retryCancel context.CancelFunc
+}
+
+type retryJob struct {
+	coords  tile.Coords
+	suffix  string
+	attempt int
 }
 
 func NewOnDemandTiles(ds pipeline.DataSource, cfg OnDemandTilesConfig, logger *slog.Logger) (*OnDemandTiles, error) {
@@ -63,7 +72,20 @@ func NewOnDemandTiles(ds pipeline.DataSource, cfg OnDemandTilesConfig, logger *s
 		cfg.CacheControl = "no-store"
 	}
 
-	t := &OnDemandTiles{ds: ds, cfg: cfg, logger: logger, sem: make(chan struct{}, cfg.MaxConcurrentGenerations)}
+	ctx, cancel := context.WithCancel(context.Background())
+	t := &OnDemandTiles{
+		ds:          ds,
+		cfg:         cfg,
+		logger:      logger,
+		sem:         make(chan struct{}, cfg.MaxConcurrentGenerations),
+		retryQueue:  make(chan retryJob, 1000),
+		retryCtx:    ctx,
+		retryCancel: cancel,
+	}
+
+	// Start retry worker
+	go t.retryWorker()
+
 	return t, nil
 }
 
@@ -140,6 +162,12 @@ func (t *OnDemandTiles) serveTile(w http.ResponseWriter, r *http.Request) {
 	_, _, err = gen.Generate(ctx, coords, force, suffix, nil)
 	if err != nil {
 		t.log().Error("failed to generate tile", "coords", coords.String(), "suffix", suffix, "error", err)
+
+		// Queue for retry if it's a transient error (Overpass timeout, etc.)
+		if isTransientError(err) {
+			t.queueRetry(coords, suffix, 0)
+		}
+
 		http.Error(w, fmt.Sprintf("failed to generate tile %s: %v", coords.String()+suffix, err), http.StatusBadGateway)
 		return
 	}
@@ -229,4 +257,78 @@ func fileExists(p string) bool {
 		return false
 	}
 	return !st.IsDir()
+}
+
+// isTransientError checks if an error is likely transient and worth retrying
+func isTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return strings.Contains(errStr, "504") ||
+		strings.Contains(errStr, "Gateway Timeout") ||
+		strings.Contains(errStr, "timeout") ||
+		strings.Contains(errStr, "overpass") ||
+		strings.Contains(errStr, "max retries exceeded")
+}
+
+func (t *OnDemandTiles) queueRetry(coords tile.Coords, suffix string, attempt int) {
+	select {
+	case t.retryQueue <- retryJob{coords: coords, suffix: suffix, attempt: attempt}:
+		t.log().Info("queued tile for retry", "coords", coords.String(), "suffix", suffix, "attempt", attempt+1)
+	default:
+		t.log().Warn("retry queue full, dropping tile", "coords", coords.String(), "suffix", suffix)
+	}
+}
+
+func (t *OnDemandTiles) retryWorker() {
+	const maxRetries = 3
+	const baseDelay = 5 * time.Second
+
+	for {
+		select {
+		case <-t.retryCtx.Done():
+			return
+		case job := <-t.retryQueue:
+			// Exponential backoff: 5s, 10s, 20s
+			delay := baseDelay * time.Duration(1<<job.attempt)
+			t.log().Info("waiting before retry", "coords", job.coords.String(), "suffix", job.suffix, "delay", delay)
+
+			select {
+			case <-t.retryCtx.Done():
+				return
+			case <-time.After(delay):
+			}
+
+			// Acquire semaphore
+			select {
+			case t.sem <- struct{}{}:
+			case <-t.retryCtx.Done():
+				return
+			}
+
+			ctx, cancel := context.WithTimeout(t.retryCtx, t.cfg.GenerationTimeout)
+			gen, err := t.getGenerator(tileSizeForSuffix(t.cfg.BaseTileSize, job.suffix))
+			if err != nil {
+				t.log().Error("retry: failed to init generator", "error", err)
+				<-t.sem
+				cancel()
+				continue
+			}
+
+			start := time.Now()
+			_, _, err = gen.Generate(ctx, job.coords, false, job.suffix, nil)
+			cancel()
+			<-t.sem
+
+			if err != nil {
+				t.log().Error("retry: failed to generate tile", "coords", job.coords.String(), "suffix", job.suffix, "attempt", job.attempt+1, "error", err)
+				if isTransientError(err) && job.attempt+1 < maxRetries {
+					t.queueRetry(job.coords, job.suffix, job.attempt+1)
+				}
+			} else {
+				t.log().Info("retry: tile generated successfully", "coords", job.coords.String(), "suffix", job.suffix, "attempt", job.attempt+1, "ms", time.Since(start).Milliseconds())
+			}
+		}
+	}
 }

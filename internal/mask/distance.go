@@ -6,6 +6,60 @@ import (
 	"math"
 )
 
+// DistanceContext holds reusable buffers for distance transform operations.
+// Reusing these buffers across multiple calls significantly reduces allocations.
+type DistanceContext struct {
+	// Buffers for distanceTransform1D
+	v []int     // parabola vertex positions
+	z []float64 // intersection x-coordinates
+
+	// Buffers for EuclideanDistanceTransform
+	temp   []float64 // squared distances (flat 1D: y*width+x)
+	isEdge []bool    // edge detection (flat 1D: y*width+x)
+	rowBuf []float64 // row input/output buffer
+	colBuf []float64 // column input/output buffer
+}
+
+// NewDistanceContext creates a context sized for images up to maxDim x maxDim.
+func NewDistanceContext(maxDim int) *DistanceContext {
+	return &DistanceContext{
+		v:      make([]int, maxDim),
+		z:      make([]float64, maxDim+1),
+		temp:   make([]float64, maxDim*maxDim),
+		isEdge: make([]bool, maxDim*maxDim),
+		rowBuf: make([]float64, maxDim),
+		colBuf: make([]float64, maxDim),
+	}
+}
+
+// EnsureCapacity grows buffers if needed for the given dimensions.
+func (c *DistanceContext) EnsureCapacity(width, height int) {
+	maxDim := width
+	if height > maxDim {
+		maxDim = height
+	}
+	area := width * height
+
+	if len(c.v) < maxDim {
+		c.v = make([]int, maxDim)
+	}
+	if len(c.z) < maxDim+1 {
+		c.z = make([]float64, maxDim+1)
+	}
+	if len(c.temp) < area {
+		c.temp = make([]float64, area)
+	}
+	if len(c.isEdge) < area {
+		c.isEdge = make([]bool, area)
+	}
+	if len(c.rowBuf) < width {
+		c.rowBuf = make([]float64, width)
+	}
+	if len(c.colBuf) < height {
+		c.colBuf = make([]float64, height)
+	}
+}
+
 // EuclideanDistanceTransform computes the Euclidean distance from each "inside"
 // pixel (value > 0) to the nearest boundary (value == 0) using the Felzenszwalb
 // & Huttenlocher separable squared distance transform algorithm.
@@ -25,24 +79,33 @@ func EuclideanDistanceTransform(mask *image.Gray, maxDistance float64) *image.Gr
 	width := bounds.Dx()
 	height := bounds.Dy()
 
-	// Temporary buffers for squared distances
-	temp := make([][]float64, height)
-	for i := range temp {
-		temp[i] = make([]float64, width)
-	}
+	// Create temporary context for this call
+	ctx := NewDistanceContext(max(width, height))
+	return EuclideanDistanceTransformWithContext(mask, maxDistance, ctx)
+}
+
+// EuclideanDistanceTransformWithContext is like EuclideanDistanceTransform but uses
+// preallocated buffers from the provided context to avoid allocations.
+func EuclideanDistanceTransformWithContext(mask *image.Gray, maxDistance float64, ctx *DistanceContext) *image.Gray {
+	bounds := mask.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Ensure context has enough capacity
+	ctx.EnsureCapacity(width, height)
 
 	infinity := maxDistance * maxDistance * 2.0
 
-	// Initialize: 0 for edge pixels (pixels with value > 0 that are adjacent to background),
-	// infinity for interior pixels (need distance computed),
-	// infinity for background pixels (they are "outside" the shape)
+	// Use flat 1D slices from context
+	temp := ctx.temp
+	isEdge := ctx.isEdge
 
-	// First, detect which inside pixels are at the edge (adjacent to background)
-	isEdge := make([][]bool, height)
-	for i := range isEdge {
-		isEdge[i] = make([]bool, width)
+	// Clear the isEdge buffer (temp will be overwritten completely)
+	for i := 0; i < width*height; i++ {
+		isEdge[i] = false
 	}
 
+	// First, detect which inside pixels are at the edge (adjacent to background)
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			val := mask.GrayAt(bounds.Min.X+x, bounds.Min.Y+y).Y
@@ -65,7 +128,7 @@ func EuclideanDistanceTransform(mask *image.Gray, maxDistance float64) *image.Gr
 				if y < height-1 && mask.GrayAt(bounds.Min.X+x, bounds.Min.Y+y+1).Y == 0 {
 					isEdgePixel = true
 				}
-				isEdge[y][x] = isEdgePixel
+				isEdge[y*width+x] = isEdgePixel
 			}
 		}
 	}
@@ -73,40 +136,50 @@ func EuclideanDistanceTransform(mask *image.Gray, maxDistance float64) *image.Gr
 	// Now initialize based on edge detection
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
+			idx := y*width + x
 			val := mask.GrayAt(bounds.Min.X+x, bounds.Min.Y+y).Y
 			if val > 0 {
-				if isEdge[y][x] {
-					temp[y][x] = 0.0 // Edge pixel - distance is 0
+				if isEdge[idx] {
+					temp[idx] = 0.0 // Edge pixel - distance is 0
 				} else {
-					temp[y][x] = infinity // Interior pixel - needs distance computed
+					temp[idx] = infinity // Interior pixel - needs distance computed
 				}
 			} else {
-				temp[y][x] = infinity // Background pixel - outside the shape
+				temp[idx] = infinity // Background pixel - outside the shape
 			}
 		}
 	}
 
+	// Use row/col buffers from context
+	rowBuf := ctx.rowBuf
+	colBuf := ctx.colBuf
+
 	// First pass: rows (horizontal distances)
-	rowInput := make([]float64, width)
-	rowOutput := make([]float64, width)
 	for y := 0; y < height; y++ {
-		copy(rowInput, temp[y])
-		distanceTransform1D(rowInput, rowOutput)
-		copy(temp[y], rowOutput)
+		rowStart := y * width
+		// Copy row to buffer
+		for x := 0; x < width; x++ {
+			rowBuf[x] = temp[rowStart+x]
+		}
+		// Transform in place using v and z buffers
+		distanceTransform1DWithBuffers(rowBuf[:width], rowBuf[:width], ctx.v, ctx.z)
+		// Copy back
+		for x := 0; x < width; x++ {
+			temp[rowStart+x] = rowBuf[x]
+		}
 	}
 
 	// Second pass: columns (complete Euclidean distance)
-	colInput := make([]float64, height)
-	colOutput := make([]float64, height)
 	for x := 0; x < width; x++ {
-		// Extract column
+		// Extract column to buffer
 		for y := 0; y < height; y++ {
-			colInput[y] = temp[y][x]
+			colBuf[y] = temp[y*width+x]
 		}
-		distanceTransform1D(colInput, colOutput)
+		// Transform in place
+		distanceTransform1DWithBuffers(colBuf[:height], colBuf[:height], ctx.v, ctx.z)
 		// Write back
 		for y := 0; y < height; y++ {
-			temp[y][x] = colOutput[y]
+			temp[y*width+x] = colBuf[y]
 		}
 	}
 
@@ -116,7 +189,8 @@ func EuclideanDistanceTransform(mask *image.Gray, maxDistance float64) *image.Gr
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			distSq := temp[y][x]
+			idx := y*width + x
+			distSq := temp[idx]
 			val := mask.GrayAt(bounds.Min.X+x, bounds.Min.Y+y).Y
 
 			// Background pixels (outside shape) remain at 0
@@ -153,11 +227,16 @@ func EuclideanDistanceTransform(mask *image.Gray, maxDistance float64) *image.Gr
 // Output: array of squared distances to nearest boundary
 func distanceTransform1D(input []float64, output []float64) {
 	n := len(input)
-
-	// v[i]: positions of parabola vertices in lower envelope
 	v := make([]int, n)
-	// z[i]: z[i] is the x-coordinate where parabola v[i] is no longer minimal
 	z := make([]float64, n+1)
+	distanceTransform1DWithBuffers(input, output, v, z)
+}
+
+// distanceTransform1DWithBuffers computes the squared distance transform using provided buffers.
+// v must have length >= n, z must have length >= n+1 where n = len(input).
+// This avoids allocations when called repeatedly.
+func distanceTransform1DWithBuffers(input []float64, output []float64, v []int, z []float64) {
+	n := len(input)
 
 	k := 0 // Index of rightmost parabola in lower envelope
 	v[0] = 0
@@ -255,5 +334,12 @@ func DistanceToIntensity(distMask *image.Gray, gamma float64) *image.Gray {
 // Returns: Grayscale mask where 0=max darkening (at edges), 255=no darkening (at center)
 func CreateDistanceEdgeMask(mask *image.Gray, radius float64, gamma float64) *image.Gray {
 	distMask := EuclideanDistanceTransform(mask, radius)
+	return DistanceToIntensity(distMask, gamma)
+}
+
+// CreateDistanceEdgeMaskWithContext is like CreateDistanceEdgeMask but uses
+// preallocated buffers from the provided context to avoid allocations.
+func CreateDistanceEdgeMaskWithContext(mask *image.Gray, radius float64, gamma float64, ctx *DistanceContext) *image.Gray {
+	distMask := EuclideanDistanceTransformWithContext(mask, radius, ctx)
 	return DistanceToIntensity(distMask, gamma)
 }

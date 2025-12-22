@@ -208,3 +208,41 @@ update-goldens-hannover:
 update-goldens-all:
     just update-goldens
     just update-goldens-hannover
+
+# Hannover bounding box (city center + surroundings)
+# minLon, minLat, maxLon, maxLat
+hannover_bbox := "9.65,52.32,9.85,52.43"
+
+# Prebuild tile cache for Hannover (zoom 10-14, good for overview + detail)
+prebuild-hannover zoom_min="10" zoom_max="14" *args:
+    @echo "Prebuilding tiles for Hannover (zoom {{zoom_min}}-{{zoom_max}})..."
+    go run ./cmd/watercolormap generate \
+        --bbox "{{hannover_bbox}}" \
+        --zoom-min {{zoom_min}} \
+        --zoom-max {{zoom_max}} \
+        --hidpi \
+        --allow-failures \
+        {{args}}
+
+# Prebuild quick cache for Hannover (zoom 10-12, fast)
+prebuild-hannover-quick *args:
+    just prebuild-hannover 10 12 {{args}}
+
+# Prebuild detailed cache for Hannover (zoom 10-15, slower but more detail)
+prebuild-hannover-detailed *args:
+    just prebuild-hannover 10 15 {{args}}
+
+# Prebuild full cache for Hannover (zoom 10-16, comprehensive)
+prebuild-hannover-full *args:
+    just prebuild-hannover 10 16 {{args}}
+
+# Prebuild cache for custom bbox and zoom range
+prebuild bbox zoom_min="10" zoom_max="14" *args:
+    @echo "Prebuilding tiles for bbox {{bbox}} (zoom {{zoom_min}}-{{zoom_max}})..."
+    go run ./cmd/watercolormap generate \
+        --bbox "{{bbox}}" \
+        --zoom-min {{zoom_min}} \
+        --zoom-max {{zoom_max}} \
+        --hidpi \
+        --allow-failures \
+        {{args}}
