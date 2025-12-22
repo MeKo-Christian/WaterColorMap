@@ -9,6 +9,25 @@ import (
 	"github.com/disintegration/gift"
 )
 
+// getAlpha extracts the alpha value (0-255) from an image at the given coordinates.
+// Uses type assertions to avoid interface boxing allocations when possible.
+func getAlpha(img image.Image, x, y int) uint8 {
+	switch src := img.(type) {
+	case *image.NRGBA:
+		return src.NRGBAAt(x, y).A
+	case *image.RGBA:
+		return src.RGBAAt(x, y).A
+	case *image.Gray:
+		return src.GrayAt(x, y).Y
+	case *image.Alpha:
+		return src.AlphaAt(x, y).A
+	default:
+		// Fallback to interface method (causes allocation)
+		_, _, _, a := img.At(x, y).RGBA()
+		return uint8(a >> 8)
+	}
+}
+
 // ExtractAlphaMask converts an image's alpha channel into a grayscale mask (0-255).
 // This preserves anti-aliased edges from the renderer and is suitable for alpha-only
 // mask composition.
@@ -22,9 +41,7 @@ func ExtractAlphaMask(img image.Image) *image.Gray {
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			_, _, _, a := img.At(x, y).RGBA()
-			// a is 0-65535; map to 0-255.
-			out.SetGray(x, y, color.Gray{Y: uint8(a >> 8)})
+			out.SetGray(x, y, color.Gray{Y: getAlpha(img, x, y)})
 		}
 	}
 
@@ -142,9 +159,7 @@ func ExtractBinaryMask(img image.Image) *image.Gray {
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			_, _, _, a := img.At(x, y).RGBA()
-			// RGBA() returns values in range 0-65535, so check if alpha > 0
-			if a > 0 {
+			if getAlpha(img, x, y) > 0 {
 				mask.SetGray(x, y, color.Gray{Y: 255}) // White - feature present
 			} else {
 				mask.SetGray(x, y, color.Gray{Y: 0}) // Black - no feature

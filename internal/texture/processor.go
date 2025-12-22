@@ -8,6 +8,33 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/geojson"
 )
 
+// getNRGBA extracts an NRGBA color from an image at the given coordinates.
+// Uses type assertions to avoid interface boxing allocations when possible.
+func getNRGBA(img image.Image, x, y int) color.NRGBA {
+	switch src := img.(type) {
+	case *image.NRGBA:
+		return src.NRGBAAt(x, y)
+	case *image.RGBA:
+		c := src.RGBAAt(x, y)
+		// Convert premultiplied alpha to non-premultiplied
+		if c.A == 0 {
+			return color.NRGBA{}
+		}
+		if c.A == 255 {
+			return color.NRGBA{R: c.R, G: c.G, B: c.B, A: 255}
+		}
+		return color.NRGBA{
+			R: uint8(uint16(c.R) * 255 / uint16(c.A)),
+			G: uint8(uint16(c.G) * 255 / uint16(c.A)),
+			B: uint8(uint16(c.B) * 255 / uint16(c.A)),
+			A: c.A,
+		}
+	default:
+		// Fallback to interface method (causes allocation)
+		return color.NRGBAModel.Convert(img.At(x, y)).(color.NRGBA)
+	}
+}
+
 // DefaultLayerTextures maps layer types to their default texture filenames.
 var DefaultLayerTextures = map[geojson.LayerType]string{
 	geojson.LayerLand:     "land.png",
@@ -54,7 +81,7 @@ func TileTexture(src image.Image, tileSize int, offsetX, offsetY int) *image.NRG
 		sy := bounds.Min.Y + mod(offsetY+y, height)
 		for x := 0; x < tileSize; x++ {
 			sx := bounds.Min.X + mod(offsetX+x, width)
-			dst.Set(x, y, src.At(sx, sy))
+			dst.SetNRGBA(x, y, getNRGBA(src, sx, sy))
 		}
 	}
 
@@ -91,7 +118,7 @@ func ApplyMaskToTexture(tex image.Image, mask *image.Gray) *image.NRGBA {
 		for x := mask.Bounds().Min.X; x < mask.Bounds().Max.X; x++ {
 			sx := texBounds.Min.X + mod(x, texW)
 
-			c := color.NRGBAModel.Convert(tex.At(sx, sy)).(color.NRGBA)
+			c := getNRGBA(tex, sx, sy)
 			// Mask controls the alpha channel; RGB comes from the texture
 			c.A = mask.GrayAt(x, y).Y
 			dst.SetNRGBA(x, y, c)
@@ -118,14 +145,14 @@ func TintTexture(tex image.Image, tint color.NRGBA, strength float64) *image.NRG
 	bounds := tex.Bounds()
 	dst := image.NewNRGBA(bounds)
 
+	blend := func(src, tgt uint8) uint8 {
+		val := (1.0-strength)*float64(src) + strength*float64(tgt)
+		return uint8(math.Round(val))
+	}
+
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			srcColor := color.NRGBAModel.Convert(tex.At(x, y)).(color.NRGBA)
-
-			blend := func(src, tgt uint8) uint8 {
-				val := (1.0-strength)*float64(src) + strength*float64(tgt)
-				return uint8(math.Round(val))
-			}
+			srcColor := getNRGBA(tex, x, y)
 
 			dst.SetNRGBA(x, y, color.NRGBA{
 				R: blend(srcColor.R, tint.R),
