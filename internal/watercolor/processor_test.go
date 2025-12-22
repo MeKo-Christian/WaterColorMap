@@ -19,7 +19,7 @@ func solidTexture(w, h int, c color.NRGBA) image.Image {
 }
 
 func TestPaintLayerAppliesMaskTintAndEdge(t *testing.T) {
-	tileSize := 32  // Increased from 16 for better edge halo visibility with box blur
+	tileSize := 32 // Increased from 16 for better edge halo visibility with box blur
 	layer := geojson.LayerWater
 
 	baseColor := color.NRGBA{R: 100, G: 100, B: 100, A: 255}
@@ -37,8 +37,7 @@ func TestPaintLayerAppliesMaskTintAndEdge(t *testing.T) {
 
 	style := params.Styles[layer]
 	style.EdgeStrength = 0.6 // Increased from 0.5 for stronger darkening
-	style.EdgeInnerSigma = 0.5
-	style.EdgeOuterSigma = 3.5 // Increased for box blur visibility
+	style.EdgeSigma = 3.5    // Increased for box blur visibility
 	style.EdgeGamma = 1.0
 	params.Styles[layer] = style
 

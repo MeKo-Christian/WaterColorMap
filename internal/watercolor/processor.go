@@ -20,8 +20,7 @@ type LayerStyle struct {
 	EdgeGamma         float64
 	MaskBlurSigma     float32
 	ShadeSigma        float32
-	EdgeInnerSigma    float32
-	EdgeOuterSigma    float32
+	EdgeSigma    float32
 	MaskThreshold     *uint8 // Optional per-layer threshold override (if nil, uses global Params.Threshold)
 }
 
@@ -55,6 +54,9 @@ func ZoomAdjustedBlurSigma(baseBlurSigma float32, zoom int) float32 {
 	return baseBlurSigma
 }
 
+// ptr is a helper to create uint8 pointers for optional threshold values.
+func ptr(v uint8) *uint8 { return &v }
+
 // DefaultParams returns sensible defaults for the watercolor pipeline.
 // textures provides base textures per layer; caller may omit entries for layers they won't process.
 func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]image.Image) Params {
@@ -73,8 +75,7 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 				ShadeSigma:     3.5,
 				ShadeStrength:  0.12,
 				EdgeStrength:   0.2,
-				EdgeInnerSigma: 1.0,
-				EdgeOuterSigma: 3.0,
+				EdgeSigma: 3.0,
 				EdgeGamma:      1.5,
 			},
 			geojson.LayerWater: {
@@ -83,9 +84,8 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 				ShadeSigma:     0,
 				ShadeStrength:  0,
 				EdgeStrength:   0.2,
-				EdgeInnerSigma: 1.0,
-				EdgeOuterSigma: 3.5,
-				EdgeGamma:      1.3,
+				EdgeSigma: 3.5,
+				EdgeGamma:      1.4,
 			},
 			geojson.LayerRivers: {
 				Layer:             geojson.LayerRivers,
@@ -95,63 +95,62 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 				ShadeSigma:        0,
 				ShadeStrength:     0,
 				EdgeStrength:      0.2,
-				EdgeInnerSigma:    0.8,
-				EdgeOuterSigma:    2.5,
-				EdgeGamma:         1.2,
+				EdgeSigma:    2.5,
+				EdgeGamma:         1.3,
 			},
 			geojson.LayerParks: {
 				Layer:          geojson.LayerParks,
 				Texture:        textures[geojson.LayerParks],
+				MaskThreshold:  ptr(120), // Higher threshold for layers after land
 				ShadeSigma:     0,
 				ShadeStrength:  0,
 				EdgeStrength:   0.2,
-				EdgeInnerSigma: 1.0,
-				EdgeOuterSigma: 3.0,
+				EdgeSigma: 3.0,
 				EdgeGamma:      1.4,
 			},
 			geojson.LayerRoads: {
 				Layer:             geojson.LayerRoads,
 				Texture:           textures[geojson.LayerRoads],
+				MaskThreshold:     ptr(120), // Higher threshold for layers after land
 				MaskBlurSigma:     1.4,
 				MaskNoiseStrength: 0.25,
 				ShadeSigma:        0,
 				ShadeStrength:     0,
 				EdgeStrength:      0.2,
-				EdgeInnerSigma:    0.6,
-				EdgeOuterSigma:    1.5,
-				EdgeGamma:         1.1,
+				EdgeSigma:    1.5,
+				EdgeGamma:         1.6,
 			},
 			geojson.LayerHighways: {
 				Layer:             geojson.LayerHighways,
 				Texture:           textures[geojson.LayerHighways],
+				MaskThreshold:     ptr(120), // Higher threshold for layers after land
 				MaskBlurSigma:     1.1,
 				MaskNoiseStrength: 0.18,
 				ShadeSigma:        0,
 				ShadeStrength:     0,
 				EdgeStrength:      0.2,
-				EdgeInnerSigma:    0.6,
-				EdgeOuterSigma:    1.4,
-				EdgeGamma:         1.05,
+				EdgeSigma:    1.4,
+				EdgeGamma:         1.5,
 			},
 			geojson.LayerCivic: {
 				Layer:          geojson.LayerCivic,
 				Texture:        textures[geojson.LayerCivic],
+				MaskThreshold:  ptr(120), // Higher threshold for layers after land
 				ShadeSigma:     0,
 				ShadeStrength:  0,
 				EdgeStrength:   0.2,
-				EdgeInnerSigma: 1.0,
-				EdgeOuterSigma: 2.5,
-				EdgeGamma:      1.2,
+				EdgeSigma: 2.5,
+				EdgeGamma:      1.4,
 			},
 			geojson.LayerBuildings: {
 				Layer:          geojson.LayerBuildings,
 				Texture:        textures[geojson.LayerCivic], // Use same texture as civic
+				MaskThreshold:  ptr(120),                     // Higher threshold for layers after land
 				ShadeSigma:     0,
 				ShadeStrength:  0,
 				EdgeStrength:   0.2,
-				EdgeInnerSigma: 1.0,
-				EdgeOuterSigma: 2.5,
-				EdgeGamma:      1.2,
+				EdgeSigma: 2.5,
+				EdgeGamma:      1.5,
 			},
 		},
 	}
@@ -223,7 +222,7 @@ func paintFromFinalMask(finalMask *image.Gray, layer geojson.LayerType, params P
 
 	// Edge darkening using distance-based edge mask
 	// Convert sigma parameters to radius (approximation: radius ≈ 3*sigma)
-	radius := float64(style.EdgeOuterSigma * 3.0)
+	radius := float64(style.EdgeSigma * 3.0)
 	gamma := style.EdgeGamma
 	if gamma <= 0 {
 		gamma = 1.0

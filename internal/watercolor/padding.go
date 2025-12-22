@@ -34,8 +34,7 @@ func RequiredPaddingPx(params Params) int {
 	for _, style := range params.Styles {
 		consider(style.MaskBlurSigma)
 		consider(style.ShadeSigma)
-		consider(style.EdgeInnerSigma)
-		consider(style.EdgeOuterSigma)
+		consider(style.EdgeSigma)
 	}
 
 	// 3*sigma captures the vast majority of the kernel energy.

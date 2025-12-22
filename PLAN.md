@@ -368,11 +368,13 @@ Then each layer gets:
 - [x] Optimize Perlin noise generation (eliminated 6-7x redundant allocations)
 
 **Current Performance** (256x256 tile, 5 layers):
+
 - Time per tile: ~86ms
 - Memory per tile: ~29MB
 - Allocations: 1.3M
 
 **Key Findings**:
+
 - Gaussian blur: 39.6% of CPU time (PRIMARY BOTTLENECK)
 - Image buffer allocations: 37.8% of memory (64-bit RGBA overhead)
 - Pixel access overhead: 17.7% of memory (color.NRGBA allocations per At() call)

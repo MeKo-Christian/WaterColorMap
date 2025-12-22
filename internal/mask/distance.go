@@ -6,7 +6,6 @@ import (
 	"math"
 )
 
-
 // EuclideanDistanceTransform computes the Euclidean distance from each "inside"
 // pixel (value > 0) to the nearest boundary (value == 0) using the Felzenszwalb
 // & Huttenlocher separable squared distance transform algorithm.

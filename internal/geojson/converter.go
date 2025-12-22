@@ -12,8 +12,8 @@ import (
 type LayerType string
 
 const (
-	LayerWater     LayerType = "water"     // Polygonal water bodies (lakes, ponds)
-	LayerRivers    LayerType = "rivers"    // Linear waterways (rivers, streams, canals)
+	LayerWater     LayerType = "water"  // Polygonal water bodies (lakes, ponds)
+	LayerRivers    LayerType = "rivers" // Linear waterways (rivers, streams, canals)
 	LayerLand      LayerType = "land"
 	LayerParks     LayerType = "parks"
 	LayerCivic     LayerType = "civic"     // Civic areas (lighter lavender)

@@ -28,8 +28,7 @@ func TestRequiredPaddingPx(t *testing.T) {
 	for k, s := range params.Styles {
 		s.MaskBlurSigma = 0
 		s.ShadeSigma = 0
-		s.EdgeInnerSigma = 0
-		s.EdgeOuterSigma = 0
+		s.EdgeSigma = 0
 		params.Styles[k] = s
 	}
 	// Even with all sigmas at 0, we need MinGeometryPaddingPx to handle
