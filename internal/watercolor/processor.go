@@ -20,8 +20,9 @@ type LayerStyle struct {
 	EdgeGamma         float64
 	MaskBlurSigma     float32
 	ShadeSigma        float32
-	EdgeSigma    float32
+	EdgeSigma         float32
 	MaskThreshold     *uint8 // Optional per-layer threshold override (if nil, uses global Params.Threshold)
+	InvertMask        bool   // If true, invert the mask after threshold (used for land = invert of non-land)
 }
 
 // Params define the common watercolor processing knobs.
@@ -74,9 +75,10 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 				Texture:        textures[geojson.LayerLand],
 				ShadeSigma:     3.5,
 				ShadeStrength:  0.12,
-				EdgeStrength:   0.2,
-				EdgeSigma: 3.0,
-				EdgeGamma:      1.5,
+				EdgeStrength:   0.3,  // Match old generator shadow strength
+				EdgeSigma:      3.0,  // radius = 3.0 * 3 = 9.0 (matches old)
+				EdgeGamma:      9.0,  // Match old generator gamma
+				InvertMask:     true, // Land is the inverse of non-land (water+rivers+roads)
 			},
 			geojson.LayerWater: {
 				Layer:          geojson.LayerWater,
@@ -186,7 +188,14 @@ func processMask(baseMask *image.Gray, layer geojson.LayerType, params Params) (
 	if layerNoiseStrength != 0 {
 		noisy = mask.ApplyNoiseToMask(blurred, params.PerlinNoise, layerNoiseStrength)
 	}
-	finalMask := mask.ApplyThresholdWithAntialias(noisy, threshold)
+
+	// Apply threshold with antialiasing, optionally inverting (for land = invert of non-land)
+	var finalMask *image.Gray
+	if style.InvertMask {
+		finalMask = mask.ApplyThresholdWithAntialiasAndInvert(noisy, threshold)
+	} else {
+		finalMask = mask.ApplyThresholdWithAntialias(noisy, threshold)
+	}
 
 	return finalMask, nil
 }
@@ -267,14 +276,25 @@ func PaintLayer(layerImage image.Image, layer geojson.LayerType, params Params) 
 // PaintLayerFromMask runs the mask pipeline (blur/noise/threshold/AA) on a provided alpha mask,
 // then applies texture/tinting and edge/shading. This is used for cross-layer workflows.
 func PaintLayerFromMask(baseMask *image.Gray, layer geojson.LayerType, params Params) (*image.NRGBA, error) {
+	painted, _, err := PaintLayerFromMaskWithMask(baseMask, layer, params)
+	return painted, err
+}
+
+// PaintLayerFromMaskWithMask is like PaintLayerFromMask but also returns the processed final mask.
+// This is useful when the caller needs the mask for constraining other layers (e.g., land mask for parks).
+func PaintLayerFromMaskWithMask(baseMask *image.Gray, layer geojson.LayerType, params Params) (*image.NRGBA, *image.Gray, error) {
 	if params.NoiseScale <= 0 {
-		return nil, errors.New("noise scale must be positive")
+		return nil, nil, errors.New("noise scale must be positive")
 	}
 	finalMask, err := processMask(baseMask, layer, params)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return paintFromFinalMask(finalMask, layer, params)
+	painted, err := paintFromFinalMask(finalMask, layer, params)
+	if err != nil {
+		return nil, nil, err
+	}
+	return painted, finalMask, nil
 }
 
 // PaintLayerFromFinalMask skips the blur/noise/threshold steps and paints directly from a final mask.

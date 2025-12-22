@@ -355,18 +355,17 @@ type renderLayersResult struct {
 	layerDirReturn string
 }
 
-// maskSet holds all extracted and processed masks for a tile.
+// maskSet holds all extracted alpha masks for a tile.
 type maskSet struct {
 	waterMask     *image.Gray
 	riversMask    *image.Gray
 	roadsMask     *image.Gray
 	highwaysAlpha *image.Gray
-	landMask      *image.Gray
-	landShadow    *image.Gray // Distance-based edge mask for land darkening
+	nonLandUnion  *image.Gray // Union of water + rivers + roads (used as base for land inversion)
 }
 
-// buildMasks extracts alpha masks from rendered layers and processes them into
-// the final land mask and shadow mask for edge darkening.
+// buildMasks extracts alpha masks from rendered layers and creates the non-land union.
+// The actual blur/noise/threshold processing is now handled by the watercolor processor.
 func buildMasks(
 	rawLayers map[geojson.LayerType]image.Image,
 	params watercolor.Params,
@@ -406,43 +405,16 @@ func buildMasks(
 	dc.Capture("03_highways_alpha", "Alpha mask from highways layer", highwaysAlpha, 3)
 
 	// Combine water, rivers, and roads into non-land union mask
-	nonLandBase := mask.MaxMask(mask.MaxMask(waterMask, riversMask), roadsMask)
-	dc.Capture("04_nonland_union", "Union of water + rivers + roads masks", nonLandBase, 4)
-
-	// Process non-land mask through blur/noise/threshold/antialias pipeline
-	// Use per-layer threshold if specified for land layer
-	threshold := params.Threshold
-	if landStyle, ok := params.Styles[geojson.LayerLand]; ok && landStyle.MaskThreshold != nil {
-		threshold = *landStyle.MaskThreshold
-	}
-
-	blurred := mask.BoxBlurSigma(nonLandBase, params.BlurSigma)
-	dc.Capture("05_blur", "Blurred non-land mask", blurred, 4)
-
-	// Apply noise if enabled
-	noisy := blurred
-	if params.NoiseStrength != 0 {
-		noisy = mask.ApplyNoiseToMask(blurred, params.PerlinNoise, params.NoiseStrength)
-		dc.Capture("07_noisy", "Blurred mask with Perlin noise applied", noisy, 6)
-	}
-
-	// Apply threshold and antialiasing, then invert to get land mask
-	landMask := mask.ApplyThresholdWithAntialiasAndInvert(noisy, threshold)
-	dc.Capture("08_threshold_antialias", "Thresholded and antialiased non-land mask", landMask, 7)
-
-	// Compute distance-based edge mask for land shadow darkening
-	// Radius of 9 pixels controls how far the darkening effect extends from edges
-	// Gamma of 9.0 creates steep falloff concentrated near edges
-	landShadow := mask.CreateDistanceEdgeMask(landMask, 9.0, 9.0)
-	dc.Capture("09_land_mask_shadow", "Distance-based edge mask", landShadow, 9)
+	// This is the base mask for land - will be inverted during processing (InvertMask=true)
+	nonLandUnion := mask.MaxMask(mask.MaxMask(waterMask, riversMask), roadsMask)
+	dc.Capture("04_nonland_union", "Union of water + rivers + roads masks", nonLandUnion, 4)
 
 	return &maskSet{
 		waterMask:     waterMask,
 		riversMask:    riversMask,
 		roadsMask:     roadsMask,
 		highwaysAlpha: highwaysAlpha,
-		landMask:      landMask,
-		landShadow:    landShadow,
+		nonLandUnion:  nonLandUnion,
 	}, nil
 }
 
@@ -476,17 +448,14 @@ func paintAllLayers(
 		dc.Capture("13_painted_rivers", "Watercolor-painted rivers layer", riversPainted, 18)
 	}
 
-	// Paint land directly from derived land mask
-	paintedLandRaw, err := watercolor.PaintLayerFromFinalMask(masks.landMask, geojson.LayerLand, params)
+	// Paint land from non-land union mask (will be inverted during processing due to InvertMask=true)
+	// The watercolor processor handles blur/noise/threshold/invert/edges uniformly
+	paintedLand, landMask, err := watercolor.PaintLayerFromMaskWithMask(masks.nonLandUnion, geojson.LayerLand, params)
 	if err != nil {
-		return nil, fmt.Errorf("failed to paint land from derived mask: %w", err)
+		return nil, fmt.Errorf("failed to paint land: %w", err)
 	}
-
-	// Apply soft edge mask to darken edges while preserving alpha and color information
-	// Strength 0.3-0.5 provides subtle darkening without going to black
-	paintedLand := mask.ApplySoftEdgeMask(paintedLandRaw, masks.landShadow, 0.3)
 	painted[geojson.LayerLand] = paintedLand
-	dc.Capture("10_painted_land", "Watercolor-painted land layer with soft edges", paintedLand, 10)
+	dc.Capture("10_painted_land", "Watercolor-painted land layer", paintedLand, 10)
 
 	// Create composite of land on white canvas for debugging
 	whiteCanvas := texture.TileTexture(textures[geojson.LayerPaper], params.TileSize, params.OffsetX, params.OffsetY)
@@ -526,7 +495,7 @@ func paintAllLayers(
 
 	// Constrain parks/civic/buildings to land, then paint
 	if parksImg := rawLayers[geojson.LayerParks]; parksImg != nil {
-		parksMask := mask.MinMask(mask.ExtractAlphaMask(parksImg), masks.landMask)
+		parksMask := mask.MinMask(mask.ExtractAlphaMask(parksImg), landMask)
 		dc.Capture("14_parks_on_land", "Parks constrained to land", parksMask, 14)
 		parksPainted, err := watercolor.PaintLayerFromMask(parksMask, geojson.LayerParks, params)
 		if err != nil {
@@ -537,7 +506,7 @@ func paintAllLayers(
 	}
 
 	if civicImg := rawLayers[geojson.LayerCivic]; civicImg != nil {
-		civicMask := mask.MinMask(mask.ExtractAlphaMask(civicImg), masks.landMask)
+		civicMask := mask.MinMask(mask.ExtractAlphaMask(civicImg), landMask)
 		dc.Capture("10_civic_on_land", "Civic constrained to land", civicMask, 10)
 		civicPainted, err := watercolor.PaintLayerFromMask(civicMask, geojson.LayerCivic, params)
 		if err != nil {
@@ -548,7 +517,7 @@ func paintAllLayers(
 	}
 
 	if buildingsImg := rawLayers[geojson.LayerBuildings]; buildingsImg != nil {
-		buildingsMask := mask.MinMask(mask.ExtractAlphaMask(buildingsImg), masks.landMask)
+		buildingsMask := mask.MinMask(mask.ExtractAlphaMask(buildingsImg), landMask)
 		dc.Capture("11_buildings_on_land", "Buildings constrained to land", buildingsMask, 11)
 		buildingsPainted, err := watercolor.PaintLayerFromMask(buildingsMask, geojson.LayerBuildings, params)
 		if err != nil {
