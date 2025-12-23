@@ -15,7 +15,7 @@ const (
 	FeatureTypePark     FeatureType = "park"
 	FeatureTypeRoad     FeatureType = "road"
 	FeatureTypeBuilding FeatureType = "building"
-	FeatureTypeCivic    FeatureType = "civic"
+	FeatureTypeUrban    FeatureType = "urban"
 	FeatureTypeLand     FeatureType = "land"
 	FeatureTypeUnknown  FeatureType = "unknown"
 )
@@ -36,7 +36,7 @@ type FeatureCollection struct {
 	Parks     []Feature // Parks, forests, green spaces
 	Roads     []Feature // Streets, highways
 	Buildings []Feature // Building footprints
-	Civic     []Feature // Schools, hospitals, landmarks
+	Urban     []Feature // Urban areas (residential/commercial/industrial landuse) and urban buildings
 	Land      []Feature // Land polygons (background)
 }
 
@@ -52,7 +52,7 @@ type TileData struct {
 
 // Count returns the total number of features
 func (fc FeatureCollection) Count() int {
-	return len(fc.Water) + len(fc.Parks) + len(fc.Roads) + len(fc.Buildings) + len(fc.Civic) + len(fc.Land)
+	return len(fc.Water) + len(fc.Parks) + len(fc.Roads) + len(fc.Buildings) + len(fc.Urban) + len(fc.Land)
 }
 
 // FeatureCounts returns a map of feature counts by type
@@ -62,7 +62,7 @@ func (fc FeatureCollection) FeatureCounts() map[string]int {
 		"parks":     len(fc.Parks),
 		"roads":     len(fc.Roads),
 		"buildings": len(fc.Buildings),
-		"civic":     len(fc.Civic),
+		"urban":     len(fc.Urban),
 		"land":      len(fc.Land),
 		"total":     fc.Count(),
 	}

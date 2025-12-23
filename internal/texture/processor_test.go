@@ -14,7 +14,7 @@ func TestTextureNameForLayer(t *testing.T) {
 		geojson.LayerLand:     "land.png",
 		geojson.LayerWater:    "water.png",
 		geojson.LayerParks:    "green.png",
-		geojson.LayerCivic:    "lilac.png",
+		geojson.LayerUrban:    "urban.png",
 		geojson.LayerRoads:    "gray.png",
 		geojson.LayerHighways: "yellow.png",
 	}

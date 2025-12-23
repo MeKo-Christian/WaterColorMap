@@ -152,7 +152,7 @@ func loadPNG(t *testing.T, path string) image.Image {
 func checkEdgeAlignment(t *testing.T, rendered map[tile.Coords]map[geojson.LayerType]string, tiles []tile.Coords) {
 	t.Helper()
 
-	layers := []geojson.LayerType{geojson.LayerLand, geojson.LayerWater, geojson.LayerParks, geojson.LayerCivic, geojson.LayerRoads}
+	layers := []geojson.LayerType{geojson.LayerLand, geojson.LayerWater, geojson.LayerParks, geojson.LayerUrban, geojson.LayerRoads}
 
 	for _, coords := range tiles {
 		// Check horizontal neighbor (east)
@@ -263,7 +263,7 @@ func expectedMaskColor(layer geojson.LayerType) (color.NRGBA, bool) {
 		return color.NRGBA{R: 0, G: 0, B: 255, A: 255}, true
 	case geojson.LayerParks:
 		return color.NRGBA{R: 0, G: 255, B: 0, A: 255}, true
-	case geojson.LayerCivic:
+	case geojson.LayerUrban:
 		return color.NRGBA{R: 192, G: 128, B: 192, A: 255}, true
 	case geojson.LayerRoads:
 		return color.NRGBA{R: 255, G: 255, B: 0, A: 255}, true

@@ -1,0 +1,494 @@
+# WaterColorMap - Complete Rendering Elements by Zoom Level
+
+This document provides a comprehensive breakdown of all rendering elements across zoom levels in WaterColorMap.
+
+## Rendering Overview
+
+### Layer Stack (Back to Front)
+1. **Paper** - White textured base layer
+2. **Land** - Tan/beige background (`#C4A574`)
+3. **Parks** - Green spaces rendered in pure green (`#00FF00`)
+4. **Rivers** - Waterways rendered in pure blue (`#0000FF`)
+5. **Water** - Water bodies rendered in pure blue (`#0000FF`)
+6. **Roads** - Secondary roads in white (`#FFFFFF`)
+7. **Highways** - Major roads in yellow (`#FFFF00`)
+8. **Urban** - Urban landuse areas (residential/commercial/industrial) and civic buildings in lilac (`#C080C0`)
+9. **Buildings** - Individual building footprints in darker lilac (`#A060A0`)
+
+### Mask Colors (Before Watercolor Processing)
+- **Land**: `#C4A574` (tan/beige)
+- **Water/Rivers**: `#0000FF` (pure blue)
+- **Parks**: `#00FF00` (pure green)
+- **Roads**: `#FFFFFF` (pure white)
+- **Highways**: `#FFFF00` (pure yellow)
+- **Urban**: `#C080C0` (lighter lilac) - includes landuse areas and civic buildings
+- **Buildings**: `#A060A0` (darker lilac) - individual building footprints
+
+---
+
+## Zoom Level 5-7 (Scale: 20M - 4M)
+**Continental Scale - Minimal Detail**
+
+### Land
+- ✅ Tan/beige background
+- All zoom levels
+
+### Water Bodies
+- ✅ Lakes, seas, oceans
+- No zoom-based filtering
+
+### Rivers
+- ✅ Major rivers only (2px width)
+- No zoom-based filtering
+
+### Parks/Green Spaces
+- ✅ Major parks and forests
+- No zoom-based filtering
+
+### Highways (Yellow)
+- ✅ **Motorway** (3.0px)
+- ❌ All other roads excluded
+
+### Roads (White)
+
+- ❌ All roads excluded
+
+### Urban Areas
+
+- ❌ No urban areas at z5-7
+
+### Buildings
+
+- ❌ No individual buildings at z5-7
+
+---
+
+## Zoom Level 8-9 (Scale: 4M - 1M)
+**Country/Region Scale**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ Lakes, seas, oceans (includes explicit sea/ocean polygons for proper coastal rendering)
+
+### Rivers
+- ✅ Major rivers (2px width)
+
+### Parks/Green Spaces
+- ✅ Parks, forests, nature reserves, and heath areas (includes Lüneburger Heide)
+
+### Highways (Yellow)
+- ✅ **Motorway** (4.0px)
+
+### Roads (White)
+
+- ✅ **Trunk** (3.5px)
+- ✅ **Primary** (3.0px)
+
+### Urban Areas
+
+- ❌ No urban areas at z8-9
+
+### Buildings
+
+- ❌ No buildings at z8-9
+
+---
+
+## Zoom Level 10-11 (Scale: 1M - 150k)
+**Province/State Scale**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ All water bodies
+
+### Rivers
+- ✅ Rivers and streams (2px width)
+
+### Parks/Green Spaces
+- ✅ Parks, forests, green spaces
+
+### Highways (Yellow)
+- ✅ **Motorway** (4.5px)
+
+### Roads (White)
+
+- ✅ **Trunk** (4px)
+- ✅ **Primary** (3.5px)
+
+### Urban Areas
+
+- ✅ **z11+**: Urban landuse areas (residential, commercial, industrial, retail)
+- ✅ **z11+**: Civic buildings (schools, hospitals, universities, libraries, town halls)
+- Helps identify towns and built-up areas
+
+### Buildings
+
+- ❌ Individual building footprints not shown until z16+
+
+---
+
+## Zoom Level 12 (Scale: 150k - 75k)
+**County/District Scale**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ All water bodies
+
+### Rivers
+- ✅ Rivers and streams (2px width)
+
+### Parks/Green Spaces
+- ✅ Parks, forests, green spaces
+
+### Highways (Yellow)
+- ✅ **Motorway** (4.5px)
+
+### Roads (White)
+
+- ✅ **Trunk** (4.5px)
+- ✅ **Primary** (4.0px)
+- ✅ **Secondary** (3.5px)
+
+### Urban Areas
+
+- ✅ Urban landuse areas (residential, commercial, industrial, retail)
+- ✅ Civic buildings (schools, hospitals, universities, libraries, town halls)
+
+### Buildings
+
+- ❌ Individual building footprints not shown until z16+
+
+---
+
+## Zoom Level 13 (Scale: 75k - 50k)
+**City Scale**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ All water bodies
+
+### Rivers
+- ✅ Rivers and streams (2px width)
+
+### Parks/Green Spaces
+- ✅ Parks, forests, green spaces
+
+### Highways (Yellow)
+- ✅ **Motorway** (5.0px)
+- ✅ **Trunk** (4.5px) - *Graduates to highways layer*
+
+### Roads (White)
+
+- ✅ **Primary** (4.5px)
+- ✅ **Secondary** (3.5px)
+- ✅ **Tertiary** (3.0px)
+
+### Urban Areas
+
+- ✅ Urban landuse areas (residential, commercial, industrial, retail)
+- ✅ Civic buildings (schools, hospitals, universities, libraries, town halls)
+
+### Buildings
+
+- ❌ Individual building footprints not shown until z16+
+
+---
+
+## Zoom Level 14 (Scale: 50k - 25k) ⭐
+**Urban Area Scale - Current Focus**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ All water bodies
+
+### Rivers
+- ✅ Rivers and streams (2px width)
+
+### Parks/Green Spaces
+- ✅ Parks, forests, green spaces
+
+### Highways (Yellow)
+- ✅ **Motorway** (6.5px)
+- ✅ **Trunk** (5.5px)
+- ✅ **Primary** (5.0px) - *Graduates to highways layer*
+
+### Roads (White)
+
+- ✅ **Secondary** (4.8px)
+- ✅ **Tertiary** (3.8px)
+- ❌ **Residential** - *Removed to reduce clutter*
+- ❌ **Unclassified** - *Removed to reduce clutter*
+- ❌ **Living Street** - *Removed to reduce clutter*
+- ❌ **Service roads, tracks, paths** - *Removed to reduce clutter*
+
+### Urban Areas
+
+- ✅ Urban landuse areas (residential, commercial, industrial, retail)
+- ✅ Civic buildings (schools, hospitals, universities, libraries, town halls)
+
+### Buildings
+
+- ✅ Individual building footprints (darker lilac `#A060A0`)
+
+**Design Note**: At z14, local streets are hidden to provide a clean regional navigation view. Only major through-roads (secondary and above) are shown.
+
+---
+
+## Zoom Level 15 (Scale: 25k - 3k)
+**Neighborhood Scale**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ All water bodies
+
+### Rivers
+- ✅ Rivers and streams (2px width)
+
+### Parks/Green Spaces
+- ✅ Parks, forests, green spaces
+
+### Highways (Yellow)
+- ✅ **Motorway** (8.0px)
+- ✅ **Trunk** (7.0px)
+- ✅ **Primary** (6.0px)
+- ✅ **Secondary** (5.0px) - *Graduates to highways layer*
+
+### Roads (White)
+
+- ✅ **Tertiary** (4.0px)
+- ✅ **Residential** (3.0px) - *Returns at this zoom*
+- ❌ **Unclassified** - *Still excluded*
+- ❌ **Living Street** - *Still excluded*
+- ❌ **Service roads, tracks, paths** - *Still excluded*
+
+### Urban Areas
+
+- ✅ Urban landuse areas (residential, commercial, industrial, retail)
+- ✅ Civic buildings (schools, hospitals, universities, libraries, town halls)
+
+### Buildings
+
+- ✅ Individual building footprints (darker lilac `#A060A0`)
+
+---
+
+## Zoom Level 16 (Scale: 25k - 3k)
+**Local Street Scale**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ All water bodies
+
+### Rivers
+- ✅ Rivers and streams (2px width)
+
+### Parks/Green Spaces
+- ✅ Parks, forests, green spaces
+
+### Highways (Yellow)
+- ✅ **Motorway** (8.0px)
+- ✅ **Trunk** (7.0px)
+- ✅ **Primary** (6.0px)
+- ✅ **Secondary** (5.0px)
+
+### Roads (White)
+
+- ✅ **Tertiary** (4.0px)
+- ✅ **Residential** (3.0px)
+- ✅ **Unclassified** (3.0px) - *Returns at this zoom*
+- ❌ **Living Street** - *Still excluded*
+- ❌ **Service roads, tracks, paths** - *Still excluded*
+
+### Urban Areas
+
+- ✅ Urban landuse areas (residential, commercial, industrial, retail)
+- ✅ Civic buildings (schools, hospitals, universities, libraries, town halls)
+
+### Buildings
+
+- ✅ Individual building footprints (darker lilac `#A060A0`)
+
+---
+
+## Zoom Level 17 (Scale: 25k - 3k)
+**Detailed Street Scale**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ All water bodies
+
+### Rivers
+- ✅ Rivers and streams (2px width)
+
+### Parks/Green Spaces
+- ✅ Parks, forests, green spaces
+
+### Highways (Yellow)
+- ✅ **Motorway** (8.0px)
+- ✅ **Trunk** (7.0px)
+- ✅ **Primary** (6.0px)
+- ✅ **Secondary** (5.0px)
+
+### Roads (White)
+
+- ✅ **Tertiary** (4.0px)
+- ✅ **Residential** (3.0px)
+- ✅ **Unclassified** (3.0px)
+- ✅ **Living Street** (3.0px) - *Returns at this zoom*
+- ❌ **Service roads, tracks, paths** - *Still excluded*
+
+### Urban Areas
+
+- ✅ Urban landuse areas (residential, commercial, industrial, retail)
+- ✅ Civic buildings (schools, hospitals, universities, libraries, town halls)
+
+### Buildings
+
+- ✅ Individual building footprints (darker lilac `#A060A0`)
+
+---
+
+## Zoom Level 18 (Scale: <3k)
+**Building-Level Detail**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ All water bodies
+
+### Rivers
+- ✅ Rivers and streams (2px width)
+
+### Parks/Green Spaces
+- ✅ All parks, forests, green spaces
+
+### Highways (Yellow)
+- ✅ **Motorway** (14.0px)
+- ✅ **Trunk** (12.0px)
+- ✅ **Primary** (11.0px)
+- ✅ **Secondary** (9.6px)
+
+### Roads (White)
+
+- ✅ **Tertiary** (7.6px)
+- ✅ **Residential** (4.0px)
+- ✅ **Unclassified** (4.0px)
+- ✅ **Living Street** (4.0px)
+- ❌ **Service roads, tracks, paths** - *Still excluded at z18*
+
+### Urban Areas
+
+- ✅ Urban landuse areas (residential, commercial, industrial, retail)
+- ✅ Civic buildings (schools, hospitals, universities, libraries, town halls)
+
+### Buildings
+
+- ✅ All individual building footprints (darker lilac `#A060A0`)
+
+---
+
+## Zoom Level 19+ (Scale: <3k)
+**Maximum Detail - All Elements**
+
+### Land
+- ✅ Tan/beige background
+
+### Water Bodies
+- ✅ All water bodies
+
+### Rivers
+- ✅ All rivers and streams (2px width)
+
+### Parks/Green Spaces
+- ✅ All parks, forests, green spaces
+
+### Highways (Yellow)
+- ✅ **Motorway** (14.0px)
+- ✅ **Trunk** (12.0px)
+- ✅ **Primary** (11.0px)
+- ✅ **Secondary** (9.6px)
+
+### Roads (White)
+- ✅ **Tertiary** (7.6px)
+- ✅ **Residential** (4.0px)
+- ✅ **Unclassified** (4.0px)
+- ✅ **Living Street** (4.0px)
+- ✅ **All Other Roads** (3.2px) - *Service, track, path, footway, cycleway, etc.*
+
+### Buildings
+- ✅ All individual buildings (darker lilac)
+
+### Civic Areas
+- ✅ All civic areas (lighter lilac)
+
+**Note**: At z19+, the catch-all rule renders ALL highway types including service roads, tracks, paths, footways, and cycleways for maximum detail.
+
+---
+
+## Progressive Disclosure Strategy
+
+### Zoom 5-9: Continental/Regional View
+- Only the most critical infrastructure (motorways, major trunk roads)
+- Basic geography (land, water, major parks)
+
+### Zoom 10-13: City/District View
+- Major road network expands progressively
+- Primary → Secondary → Tertiary roads appear
+- Trunk roads graduate to highways layer at z13
+
+### Zoom 14: Urban Navigation (⭐ Special Level)
+- **Clean navigation focus**: Local streets removed
+- Only through-roads shown (secondary and above)
+- Primary roads graduate to highways layer
+- Designed for regional wayfinding without clutter
+
+### Zoom 15-17: Neighborhood Detail
+- Local streets return progressively:
+  - z15: Residential streets
+  - z16: Unclassified roads
+  - z17: Living streets
+- Secondary graduates to highways layer at z15
+
+### Zoom 18+: Maximum Detail
+- All road types visible
+- z19+: Even service roads, paths, and tracks appear
+- Full building and civic area detail
+
+---
+
+## Configuration Files
+
+- **Layer Definitions**: `assets/styles/layers/*.xml`
+  - `land.xml` - Tan/beige background
+  - `water.xml` - Water bodies (blue)
+  - `rivers.xml` - Rivers and streams (blue)
+  - `parks.xml` - Green spaces (green)
+  - `roads.xml` - Secondary roads (white)
+  - `highways.xml` - Major roads (yellow)
+  - `buildings.xml` - Individual buildings (darker lilac)
+  - `civic.xml` - Civic areas (lighter lilac)
+
+- **Pipeline Processing**: `internal/pipeline/generator.go`
+  - Compositing order: Land → Parks → Rivers → Water → Roads → Highways → Buildings → Civic
+
+- **Watercolor Effects**: `internal/watercolor/processor.go`
+  - Inset shadow effects
+  - Edge darkening
+  - Texture blending

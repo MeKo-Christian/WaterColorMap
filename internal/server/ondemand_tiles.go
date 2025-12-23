@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,10 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/MeKo-Tech/watercolormap/internal/datasource"
 	"github.com/MeKo-Tech/watercolormap/internal/pipeline"
 	"github.com/MeKo-Tech/watercolormap/internal/tile"
+	"github.com/MeKo-Tech/watercolormap/internal/types"
 )
 
 type OnDemandTilesConfig struct {
@@ -29,10 +33,15 @@ type OnDemandTilesConfig struct {
 	KeepLayers               bool
 	GenerateMissing          bool
 	DisableCache             bool
+	// FetchWorkers is the number of concurrent Overpass API fetch workers (default: 2)
+	FetchWorkers int
+	// DataSizeWarningMB logs a warning when tile data exceeds this size (default: 10)
+	DataSizeWarningMB int64
 }
 
 type OnDemandTiles struct {
 	ds          pipeline.DataSource
+	fetchQueue  *datasource.FetchQueue
 	logger      *slog.Logger
 	sem         chan struct{}
 	locks       sync.Map
@@ -41,12 +50,53 @@ type OnDemandTiles struct {
 	retryQueue  chan retryJob
 	retryCtx    context.Context
 	retryCancel context.CancelFunc
+
+	// Status tracking for renders
+	activeRenders  atomic.Int32
+	totalRendered  atomic.Int64
+	totalFailed    atomic.Int64
+	currentRenders sync.Map // map[string]time.Time - tile coord string -> start time
+	pendingRetries atomic.Int32
+
+	// Queue tracking - tiles waiting for semaphore
+	queuedRenders atomic.Int32
+	queuedTiles   sync.Map // map[string]time.Time - tile coord string -> queue time
+}
+
+// TileStatus represents the current status of the tile generation system.
+type TileStatus struct {
+	// Fetch status (from FetchQueue)
+	Fetch *datasource.FetchQueueStatus `json:"fetch,omitempty"`
+
+	// Render status
+	Render RenderStatus `json:"render"`
+
+	// Retry queue status
+	Retry RetryStatus `json:"retry"`
+}
+
+// RenderStatus contains current render operation status.
+type RenderStatus struct {
+	ActiveRenders int      `json:"active_renders"`
+	TotalRendered int64    `json:"total_rendered"`
+	TotalFailed   int64    `json:"total_failed"`
+	CurrentTiles  []string `json:"current_tiles"`
+	MaxConcurrent int      `json:"max_concurrent"`
+	QueuedRenders int      `json:"queued_renders"`
+	QueuedTiles   []string `json:"queued_tiles"`
+}
+
+// RetryStatus contains retry queue status.
+type RetryStatus struct {
+	PendingRetries int `json:"pending_retries"`
+	QueueCapacity  int `json:"queue_capacity"`
 }
 
 type retryJob struct {
 	coords  tile.Coords
 	suffix  string
 	attempt int
+	data    *types.TileData // Pre-fetched data for retry
 }
 
 func NewOnDemandTiles(ds pipeline.DataSource, cfg OnDemandTilesConfig, logger *slog.Logger) (*OnDemandTiles, error) {
@@ -71,10 +121,31 @@ func NewOnDemandTiles(ds pipeline.DataSource, cfg OnDemandTilesConfig, logger *s
 	if cfg.CacheControl == "" {
 		cfg.CacheControl = "no-store"
 	}
+	if cfg.FetchWorkers <= 0 {
+		cfg.FetchWorkers = 2
+	}
+	if cfg.DataSizeWarningMB <= 0 {
+		cfg.DataSizeWarningMB = 10
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Create fetch queue if datasource is OverpassDataSource
+	var fetchQueue *datasource.FetchQueue
+	if opDS, ok := ds.(*datasource.OverpassDataSource); ok {
+		fetchQueue = datasource.NewFetchQueue(opDS, datasource.FetchQueueConfig{
+			Workers:                  cfg.FetchWorkers,
+			QueueSize:                100,
+			DataSizeWarningThreshold: cfg.DataSizeWarningMB * 1024 * 1024,
+			Logger:                   logger,
+		})
+		fetchQueue.Start()
+		logger.Info("started fetch queue with workers", "workers", cfg.FetchWorkers)
+	}
+
 	t := &OnDemandTiles{
 		ds:          ds,
+		fetchQueue:  fetchQueue,
 		cfg:         cfg,
 		logger:      logger,
 		sem:         make(chan struct{}, cfg.MaxConcurrentGenerations),
@@ -87,6 +158,113 @@ func NewOnDemandTiles(ds pipeline.DataSource, cfg OnDemandTilesConfig, logger *s
 	go t.retryWorker()
 
 	return t, nil
+}
+
+// Stop gracefully shuts down the server.
+func (t *OnDemandTiles) Stop() {
+	t.retryCancel()
+	if t.fetchQueue != nil {
+		t.fetchQueue.Stop()
+	}
+}
+
+// Status returns the current status of the tile generation system.
+func (t *OnDemandTiles) Status() TileStatus {
+	var currentRenders []string
+	t.currentRenders.Range(func(key, _ any) bool {
+		currentRenders = append(currentRenders, key.(string))
+		return true
+	})
+
+	var queuedTiles []string
+	t.queuedTiles.Range(func(key, _ any) bool {
+		queuedTiles = append(queuedTiles, key.(string))
+		return true
+	})
+
+	status := TileStatus{
+		Render: RenderStatus{
+			ActiveRenders: int(t.activeRenders.Load()),
+			TotalRendered: t.totalRendered.Load(),
+			TotalFailed:   t.totalFailed.Load(),
+			CurrentTiles:  currentRenders,
+			MaxConcurrent: t.cfg.MaxConcurrentGenerations,
+			QueuedRenders: int(t.queuedRenders.Load()),
+			QueuedTiles:   queuedTiles,
+		},
+		Retry: RetryStatus{
+			PendingRetries: int(t.pendingRetries.Load()),
+			QueueCapacity:  cap(t.retryQueue),
+		},
+	}
+
+	if t.fetchQueue != nil {
+		fetchStatus := t.fetchQueue.Status()
+		status.Fetch = &fetchStatus
+	}
+
+	return status
+}
+
+// StatusHandler returns an HTTP handler for the status endpoint (JSON).
+func (t *OnDemandTiles) StatusHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Cache-Control", "no-store")
+
+		status := t.Status()
+		if err := json.NewEncoder(w).Encode(status); err != nil {
+			t.log().Error("failed to encode status", "error", err)
+			http.Error(w, "failed to encode status", http.StatusInternalServerError)
+			return
+		}
+	})
+}
+
+// StatusStreamHandler returns an SSE handler for real-time status streaming.
+// This uses Server-Sent Events to push status updates to the client,
+// avoiding browser connection limits that block polling during tile loading.
+func (t *OnDemandTiles) StatusStreamHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set SSE headers
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "SSE not supported", http.StatusInternalServerError)
+			return
+		}
+
+		// Send status updates every 250ms
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+
+		// Send initial status immediately
+		t.sendStatusEvent(w, flusher)
+
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-ticker.C:
+				t.sendStatusEvent(w, flusher)
+			}
+		}
+	})
+}
+
+func (t *OnDemandTiles) sendStatusEvent(w http.ResponseWriter, flusher http.Flusher) {
+	status := t.Status()
+	data, err := json.Marshal(status)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
 }
 
 func (t *OnDemandTiles) Handler() http.Handler {
@@ -139,10 +317,21 @@ func (t *OnDemandTiles) serveTile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Track tile as queued (waiting for semaphore)
+	queueKey := coords.String() + suffix
+	t.queuedRenders.Add(1)
+	t.queuedTiles.Store(queueKey, time.Now())
+
 	select {
 	case t.sem <- struct{}{}:
+		// Got semaphore - remove from queue
+		t.queuedRenders.Add(-1)
+		t.queuedTiles.Delete(queueKey)
 		defer func() { <-t.sem }()
 	case <-r.Context().Done():
+		// Request cancelled - remove from queue
+		t.queuedRenders.Add(-1)
+		t.queuedTiles.Delete(queueKey)
 		http.Error(w, "request cancelled", http.StatusRequestTimeout)
 		return
 	}
@@ -151,7 +340,8 @@ func (t *OnDemandTiles) serveTile(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	force := t.cfg.DisableCache
-	gen, err := t.getGenerator(tileSizeForSuffix(t.cfg.BaseTileSize, suffix))
+	tileSize := tileSizeForSuffix(t.cfg.BaseTileSize, suffix)
+	gen, err := t.getGenerator(tileSize)
 	if err != nil {
 		t.log().Error("failed to init generator", "error", err)
 		http.Error(w, "failed to init generator", http.StatusInternalServerError)
@@ -159,18 +349,64 @@ func (t *OnDemandTiles) serveTile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	_, _, err = gen.Generate(ctx, coords, force, suffix, nil)
-	if err != nil {
-		t.log().Error("failed to generate tile", "coords", coords.String(), "suffix", suffix, "error", err)
 
-		// Queue for retry if it's a transient error (Overpass timeout, etc.)
-		if isTransientError(err) {
-			t.queueRetry(coords, suffix, 0)
+	// Phase 1: Fetch data (decoupled from rendering)
+	// The go-overpass library handles retries internally with exponential backoff
+	var tileData *types.TileData
+	if t.fetchQueue != nil {
+		tileCoord := types.TileCoordinate{
+			Zoom: int(coords.Z),
+			X:    int(coords.X),
+			Y:    int(coords.Y),
+		}
+		bounds := gen.CalculateFetchBounds(coords)
+
+		fetchResult, fetchErr := t.fetchQueue.SubmitAndWait(ctx, tileCoord, bounds)
+		if fetchErr != nil {
+			t.log().Error("fetch queue error", "coords", coords.String(), "error", fetchErr)
+			http.Error(w, fmt.Sprintf("failed to fetch tile data: %v", fetchErr), http.StatusBadGateway)
+			return
+		}
+		if fetchResult.Error != nil {
+			// Fetch failed - queue for retry if transient
+			if isTransientError(fetchResult.Error) {
+				t.log().Warn("transient fetch error, queuing retry", "coords", coords.String(), "suffix", suffix, "error", fetchResult.Error)
+				t.queueRetry(coords, suffix, 0, nil)
+			} else {
+				t.log().Error("failed to fetch tile data", "coords", coords.String(), "suffix", suffix, "error", fetchResult.Error)
+			}
+			http.Error(w, fmt.Sprintf("failed to fetch tile data: %v", fetchResult.Error), http.StatusBadGateway)
+			return
+		}
+		tileData = fetchResult.Data
+		t.log().Info("fetch completed", "coords", coords.String(), "data_size_mb", fmt.Sprintf("%.2f", float64(fetchResult.DataSize)/(1024*1024)))
+	}
+
+	// Phase 2: Render with pre-fetched data (or fetch during render if no queue)
+	tileKey := coords.String() + suffix
+	t.activeRenders.Add(1)
+	t.currentRenders.Store(tileKey, time.Now())
+
+	_, _, err = gen.GenerateWithData(ctx, coords, force, suffix, nil, tileData)
+
+	t.activeRenders.Add(-1)
+	t.currentRenders.Delete(tileKey)
+
+	if err != nil {
+		t.totalFailed.Add(1)
+		// Rendering error - only queue retry if it's a fetch-related transient error
+		// and we didn't already have pre-fetched data
+		if tileData == nil && isTransientError(err) {
+			t.log().Warn("transient error during generation, queuing retry", "coords", coords.String(), "suffix", suffix, "error", err)
+			t.queueRetry(coords, suffix, 0, nil)
+		} else {
+			t.log().Error("failed to generate tile", "coords", coords.String(), "suffix", suffix, "error", err)
 		}
 
 		http.Error(w, fmt.Sprintf("failed to generate tile %s: %v", coords.String()+suffix, err), http.StatusBadGateway)
 		return
 	}
+	t.totalRendered.Add(1)
 	t.log().Info("tile generated on-demand", "coords", coords.String(), "suffix", suffix, "ms", time.Since(start).Milliseconds())
 
 	if !fileExists(fullPath) {
@@ -269,12 +505,14 @@ func isTransientError(err error) bool {
 		strings.Contains(errStr, "Gateway Timeout") ||
 		strings.Contains(errStr, "timeout") ||
 		strings.Contains(errStr, "overpass") ||
+		strings.Contains(errStr, "empty response") ||
 		strings.Contains(errStr, "max retries exceeded")
 }
 
-func (t *OnDemandTiles) queueRetry(coords tile.Coords, suffix string, attempt int) {
+func (t *OnDemandTiles) queueRetry(coords tile.Coords, suffix string, attempt int, data *types.TileData) {
 	select {
-	case t.retryQueue <- retryJob{coords: coords, suffix: suffix, attempt: attempt}:
+	case t.retryQueue <- retryJob{coords: coords, suffix: suffix, attempt: attempt, data: data}:
+		t.pendingRetries.Add(1)
 		t.log().Info("queued tile for retry", "coords", coords.String(), "suffix", suffix, "attempt", attempt+1)
 	default:
 		t.log().Warn("retry queue full, dropping tile", "coords", coords.String(), "suffix", suffix)
@@ -283,14 +521,28 @@ func (t *OnDemandTiles) queueRetry(coords tile.Coords, suffix string, attempt in
 
 func (t *OnDemandTiles) retryWorker() {
 	const maxRetries = 3
-	const baseDelay = 5 * time.Second
 
 	for {
 		select {
 		case <-t.retryCtx.Done():
 			return
 		case job := <-t.retryQueue:
-			// Exponential backoff: 5s, 10s, 20s
+			t.pendingRetries.Add(-1)
+			// Base delay depends on zoom level - low zoom tiles hit rate limits harder
+			// z0-7: 30s base (huge tiles, heavy queries)
+			// z8-10: 15s base (large tiles)
+			// z11+: 5s base (normal tiles)
+			var baseDelay time.Duration
+			switch {
+			case job.coords.Z <= 7:
+				baseDelay = 30 * time.Second
+			case job.coords.Z <= 10:
+				baseDelay = 15 * time.Second
+			default:
+				baseDelay = 5 * time.Second
+			}
+
+			// Exponential backoff from base delay
 			delay := baseDelay * time.Duration(1<<job.attempt)
 			t.log().Info("waiting before retry", "coords", job.coords.String(), "suffix", job.suffix, "delay", delay)
 
@@ -308,7 +560,8 @@ func (t *OnDemandTiles) retryWorker() {
 			}
 
 			ctx, cancel := context.WithTimeout(t.retryCtx, t.cfg.GenerationTimeout)
-			gen, err := t.getGenerator(tileSizeForSuffix(t.cfg.BaseTileSize, job.suffix))
+			tileSize := tileSizeForSuffix(t.cfg.BaseTileSize, job.suffix)
+			gen, err := t.getGenerator(tileSize)
 			if err != nil {
 				t.log().Error("retry: failed to init generator", "error", err)
 				<-t.sem
@@ -317,16 +570,56 @@ func (t *OnDemandTiles) retryWorker() {
 			}
 
 			start := time.Now()
-			_, _, err = gen.Generate(ctx, job.coords, false, job.suffix, nil)
+
+			// Use pre-fetched data if available, otherwise fetch first
+			tileData := job.data
+			if tileData == nil && t.fetchQueue != nil {
+				tileCoord := types.TileCoordinate{
+					Zoom: int(job.coords.Z),
+					X:    int(job.coords.X),
+					Y:    int(job.coords.Y),
+				}
+				bounds := gen.CalculateFetchBounds(job.coords)
+
+				fetchResult, fetchErr := t.fetchQueue.SubmitAndWait(ctx, tileCoord, bounds)
+				if fetchErr != nil || fetchResult.Error != nil {
+					fetchError := fetchErr
+					if fetchError == nil {
+						fetchError = fetchResult.Error
+					}
+					t.log().Error("retry: failed to fetch tile data", "coords", job.coords.String(), "suffix", job.suffix, "attempt", job.attempt+1, "error", fetchError)
+					if isTransientError(fetchError) && job.attempt+1 < maxRetries {
+						t.queueRetry(job.coords, job.suffix, job.attempt+1, nil)
+					}
+					<-t.sem
+					cancel()
+					continue
+				}
+				tileData = fetchResult.Data
+				t.log().Info("retry: fetch completed", "coords", job.coords.String(), "data_size_mb", fmt.Sprintf("%.2f", float64(fetchResult.DataSize)/(1024*1024)))
+			}
+
+			// Track retry render in status
+			tileKey := job.coords.String() + job.suffix
+			t.activeRenders.Add(1)
+			t.currentRenders.Store(tileKey, time.Now())
+
+			_, _, err = gen.GenerateWithData(ctx, job.coords, false, job.suffix, nil, tileData)
+
+			t.activeRenders.Add(-1)
+			t.currentRenders.Delete(tileKey)
 			cancel()
 			<-t.sem
 
 			if err != nil {
+				t.totalFailed.Add(1)
 				t.log().Error("retry: failed to generate tile", "coords", job.coords.String(), "suffix", job.suffix, "attempt", job.attempt+1, "error", err)
-				if isTransientError(err) && job.attempt+1 < maxRetries {
-					t.queueRetry(job.coords, job.suffix, job.attempt+1)
+				// Only retry if we didn't have pre-fetched data (fetch-related error)
+				if tileData == nil && isTransientError(err) && job.attempt+1 < maxRetries {
+					t.queueRetry(job.coords, job.suffix, job.attempt+1, nil)
 				}
 			} else {
+				t.totalRendered.Add(1)
 				t.log().Info("retry: tile generated successfully", "coords", job.coords.String(), "suffix", job.suffix, "attempt", job.attempt+1, "ms", time.Since(start).Milliseconds())
 			}
 		}

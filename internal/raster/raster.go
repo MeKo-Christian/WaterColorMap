@@ -40,7 +40,7 @@ func (r *Renderer) RenderLayers(fc types.FeatureCollection) map[geojson.LayerTyp
 	water := image.NewNRGBA(b)
 	rivers := image.NewNRGBA(b)
 	parks := image.NewNRGBA(b)
-	civic := image.NewNRGBA(b)
+	urban := image.NewNRGBA(b)
 	roads := image.NewNRGBA(b)
 	highways := image.NewNRGBA(b)
 
@@ -60,12 +60,12 @@ func (r *Renderer) RenderLayers(fc types.FeatureCollection) map[geojson.LayerTyp
 		r.renderFeature(parks, &fc.Parks[i], 0)
 	}
 
-	// Civic = civic + buildings
-	for i := range fc.Civic {
-		r.renderFeature(civic, &fc.Civic[i], 0)
+	// Urban areas (landuse) + civic buildings
+	for i := range fc.Urban {
+		r.renderFeature(urban, &fc.Urban[i], 0)
 	}
 	for i := range fc.Buildings {
-		r.renderFeature(civic, &fc.Buildings[i], 0)
+		r.renderFeature(urban, &fc.Buildings[i], 0)
 	}
 
 	// Roads + derived highways
@@ -82,7 +82,7 @@ func (r *Renderer) RenderLayers(fc types.FeatureCollection) map[geojson.LayerTyp
 		geojson.LayerWater:    water,
 		geojson.LayerRivers:   rivers,
 		geojson.LayerParks:    parks,
-		geojson.LayerCivic:    civic,
+		geojson.LayerUrban:    urban,
 		geojson.LayerRoads:    roads,
 		geojson.LayerHighways: highways,
 	}

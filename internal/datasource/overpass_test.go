@@ -106,7 +106,7 @@ func TestFetchHanoverTile(t *testing.T) {
 	t.Logf("  Parks: %d", counts["parks"])
 	t.Logf("  Roads: %d", counts["roads"])
 	t.Logf("  Buildings: %d", counts["buildings"])
-	t.Logf("  Civic: %d", counts["civic"])
+	t.Logf("  Civic: %d", counts["urban"])
 	t.Logf("  Total: %d", counts["total"])
 
 	// Assertions

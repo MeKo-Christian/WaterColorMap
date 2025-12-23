@@ -27,7 +27,7 @@
       .info {
         position: absolute;
         top: 10px;
-        left: 10px;
+        right: 10px;
         background: rgba(255, 255, 255, 0.9);
         padding: 8px 10px;
         font:
@@ -39,6 +39,77 @@
         border-radius: 6px;
         z-index: 1000;
       }
+      .status-panel {
+        position: absolute;
+        bottom: 20px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 10px 14px;
+        font:
+          11px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        border-radius: 6px;
+        z-index: 1000;
+        min-width: 200px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      }
+      .status-panel h3 {
+        margin: 0 0 6px 0;
+        font-size: 12px;
+        font-weight: 600;
+        color: #333;
+      }
+      .status-section {
+        margin-bottom: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #eee;
+      }
+      .status-section:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+      }
+      .status-section h4 {
+        margin: 0 0 4px 0;
+        font-size: 10px;
+        font-weight: 600;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .status-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 1px 0;
+      }
+      .status-label {
+        color: #666;
+      }
+      .status-value {
+        font-weight: 500;
+        color: #333;
+      }
+      .status-value.active {
+        color: #2563eb;
+      }
+      .status-value.idle {
+        color: #6b7280;
+      }
+      .status-tiles {
+        font-size: 10px;
+        color: #888;
+        max-height: 60px;
+        overflow-y: auto;
+        margin-top: 4px;
+      }
+      .status-disconnected {
+        color: #dc2626;
+        font-style: italic;
+      }
     </style>
   </head>
 
@@ -48,8 +119,181 @@
       <div><strong>WaterColorMap</strong> demo</div>
       <div>Watercolor-inspired raster tiles (OSM data).</div>
     </div>
+    <div class="status-panel" id="status-panel">
+      <h3>Server Status</h3>
+      <div id="status-content">
+        <div style="color: #6b7280; font-style: italic;">Loading...</div>
+      </div>
+    </div>
 
     <script>
+      // Version marker - if you don't see this in console, browser is serving cached HTML
+      console.log('🎨 WaterColorMap Demo v3.0 - SSE Status Stream');
+
+      // ============================================================
+      // IMPORTANT: Start SSE connection FIRST, before any tile requests
+      // This ensures the status stream gets a connection before tiles
+      // consume all available browser connections.
+      // ============================================================
+      const statusContent = document.getElementById("status-content");
+      let statusConnected = false;
+      let eventSource = null;
+      let reconnectAttempts = 0;
+      const maxReconnectAttempts = 5;
+
+      function formatBytes(bytes) {
+        if (bytes === 0) return "0 B";
+        const k = 1024;
+        const sizes = ["B", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+      }
+
+      function renderStatus(status) {
+        let html = "";
+
+        // Check if system is completely idle
+        const isIdle = status.render.active_renders === 0 &&
+                       status.render.total_rendered === 0 &&
+                       status.render.queued_renders === 0 &&
+                       (!status.fetch || (status.fetch.active_fetches === 0 && status.fetch.total_completed === 0));
+
+        if (isIdle) {
+          html += `<div style="color: #6b7280; font-style: italic; padding: 4px 0;">Ready - navigate map to generate tiles</div>`;
+        }
+
+        // Fetch section
+        if (status.fetch) {
+          const f = status.fetch;
+          const fetchActive = f.active_fetches > 0;
+          html += `
+            <div class="status-section">
+              <h4>Data Fetch</h4>
+              <div class="status-row">
+                <span class="status-label">Active:</span>
+                <span class="status-value ${fetchActive ? "active" : "idle"}">${f.active_fetches}</span>
+              </div>
+              <div class="status-row">
+                <span class="status-label">Queued:</span>
+                <span class="status-value">${f.queued_fetches}</span>
+              </div>
+              <div class="status-row">
+                <span class="status-label">Completed:</span>
+                <span class="status-value">${f.total_completed}</span>
+              </div>
+              <div class="status-row">
+                <span class="status-label">Failed:</span>
+                <span class="status-value">${f.total_failed}</span>
+              </div>
+              <div class="status-row">
+                <span class="status-label">Data:</span>
+                <span class="status-value">${formatBytes(f.total_bytes)}</span>
+              </div>`;
+          if (f.current_tiles && f.current_tiles.length > 0) {
+            html += `<div class="status-tiles">Fetching: ${f.current_tiles.join(", ")}</div>`;
+          }
+          html += "</div>";
+        }
+
+        // Queued section (tiles waiting for render slot)
+        const r = status.render;
+        if (r.queued_renders > 0) {
+          html += `
+            <div class="status-section">
+              <h4>Queued</h4>
+              <div class="status-row">
+                <span class="status-label">Waiting:</span>
+                <span class="status-value active">${r.queued_renders}</span>
+              </div>`;
+          if (r.queued_tiles && r.queued_tiles.length > 0) {
+            html += `<div class="status-tiles">Queued: ${r.queued_tiles.join(", ")}</div>`;
+          }
+          html += "</div>";
+        }
+
+        // Render section
+        const renderActive = r.active_renders > 0;
+        html += `
+          <div class="status-section">
+            <h4>Rendering</h4>
+            <div class="status-row">
+              <span class="status-label">Active:</span>
+              <span class="status-value ${renderActive ? "active" : "idle"}">${r.active_renders} / ${r.max_concurrent}</span>
+            </div>
+            <div class="status-row">
+              <span class="status-label">Completed:</span>
+              <span class="status-value">${r.total_rendered}</span>
+            </div>
+            <div class="status-row">
+              <span class="status-label">Failed:</span>
+              <span class="status-value">${r.total_failed}</span>
+            </div>`;
+        if (r.current_tiles && r.current_tiles.length > 0) {
+          html += `<div class="status-tiles">Rendering: ${r.current_tiles.join(", ")}</div>`;
+        }
+        html += "</div>";
+
+        // Retry section (only show if there are pending retries)
+        if (status.retry && status.retry.pending_retries > 0) {
+          html += `
+            <div class="status-section">
+              <h4>Retry Queue</h4>
+              <div class="status-row">
+                <span class="status-label">Pending:</span>
+                <span class="status-value">${status.retry.pending_retries}</span>
+              </div>
+            </div>`;
+        }
+
+        statusContent.innerHTML = html;
+      }
+
+      function connectStatusStream() {
+        if (eventSource) {
+          eventSource.close();
+        }
+
+        eventSource = new EventSource(`${window.location.origin}/tiles/status/stream`);
+
+        eventSource.onopen = () => {
+          console.log('SSE connection established');
+          statusConnected = true;
+          reconnectAttempts = 0;
+        };
+
+        eventSource.onmessage = (event) => {
+          try {
+            const status = JSON.parse(event.data);
+            statusConnected = true;
+            renderStatus(status);
+          } catch (err) {
+            console.error('Failed to parse status:', err);
+          }
+        };
+
+        eventSource.onerror = () => {
+          console.log('SSE connection error, will retry');
+          statusConnected = false;
+          eventSource.close();
+
+          if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            const delay = Math.pow(2, reconnectAttempts - 1) * 1000;
+            statusContent.innerHTML = `<div style="color: #6b7280; font-style: italic;">Reconnecting...</div>`;
+            setTimeout(connectStatusStream, delay);
+          } else {
+            statusContent.innerHTML = '<div class="status-disconnected">Disconnected</div>';
+          }
+        };
+      }
+
+      // Start SSE connection IMMEDIATELY - before map loads tiles
+      connectStatusStream();
+
+      // ============================================================
+      // Now initialize the map (tiles will start loading after this)
+      // ============================================================
+
       // Parse URL hash for initial view: #zoom/lat/lng
       function parseHash() {
         const hash = window.location.hash.replace("#", "");
@@ -75,7 +319,9 @@
       const defaultZoom = 13;
 
       const hashState = parseHash();
-      const initialCenter = hashState ? [hashState.lat, hashState.lng] : defaultCenter;
+      const initialCenter = hashState
+        ? [hashState.lat, hashState.lng]
+        : defaultCenter;
       const initialZoom = hashState ? hashState.zoom : defaultZoom;
 
       const map = L.map("map", {

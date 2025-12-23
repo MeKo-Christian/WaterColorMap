@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"runtime"
@@ -10,6 +11,7 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/datasource"
 	"github.com/MeKo-Tech/watercolormap/internal/pipeline"
 	"github.com/MeKo-Tech/watercolormap/internal/server"
+	"github.com/MeKo-Tech/watercolormap/internal/types"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -38,6 +40,9 @@ func init() {
 	serveCmd.Flags().String("png-compression", "default", "PNG compression (default, speed, best, none)")
 	serveCmd.Flags().Int64("seed", 1337, "Deterministic seed for noise/texture alignment")
 	serveCmd.Flags().Bool("keep-layers", false, "Keep intermediate rendered layer PNGs for debugging")
+	serveCmd.Flags().Int("overpass-workers", 4, "Number of parallel Overpass API requests (2-4 recommended for public API)")
+	serveCmd.Flags().Int("fetch-workers", 2, "Number of concurrent data fetch workers (separate from rendering)")
+	serveCmd.Flags().Int64("data-size-warning-mb", 10, "Warn when tile data exceeds this size in MB")
 
 	mustBind := func(key string, name string) {
 		if err := viper.BindPFlag(key, serveCmd.Flags().Lookup(name)); err != nil {
@@ -59,6 +64,9 @@ func init() {
 	mustBind("serve.png_compression", "png-compression")
 	mustBind("serve.seed", "seed")
 	mustBind("serve.keep_layers", "keep-layers")
+	mustBind("serve.overpass_workers", "overpass-workers")
+	mustBind("serve.fetch_workers", "fetch-workers")
+	mustBind("serve.data_size_warning_mb", "data-size-warning-mb")
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -83,6 +91,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	pngCompression := viper.GetString("serve.png_compression")
 	seed := viper.GetInt64("serve.seed")
 	keepLayers := viper.GetBool("serve.keep_layers")
+	overpassWorkers := viper.GetInt("serve.overpass_workers")
+	fetchWorkers := viper.GetInt("serve.fetch_workers")
+	dataSizeWarningMB := viper.GetInt64("serve.data_size_warning_mb")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +131,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		var ds pipeline.DataSource
 		switch dataSourceName {
 		case "overpass":
-			ds = datasource.NewOverpassDataSource("")
+			ds = createOverpassDataSource(overpassWorkers, logger)
 		default:
 			return fmt.Errorf("unsupported data source: %s", dataSourceName)
 		}
@@ -138,11 +149,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 			MaxConcurrentGenerations: maxConc,
 			GenerationTimeout:        genTimeout,
 			CacheControl:             cacheControl,
+			FetchWorkers:             fetchWorkers,
+			DataSizeWarningMB:        dataSizeWarningMB,
 		}, logger)
 		if err != nil {
 			return err
 		}
 
+		mux.Handle("/tiles/status", withCORS(od.StatusHandler()))
+		mux.Handle("/tiles/status/stream", withCORS(od.StatusStreamHandler()))
 		mux.Handle("/tiles/", withCORS(od.Handler()))
 	}
 
@@ -152,6 +167,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		"demo_dir", demoDir,
 		"generate_missing", generateMissing,
 		"max_concurrent_generations", maxConc,
+		"overpass_workers", overpassWorkers,
+		"fetch_workers", fetchWorkers,
+		"data_size_warning_mb", dataSizeWarningMB,
 	)
 
 	// Print the URL directly for easy access
@@ -159,6 +177,108 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	return srv.ListenAndServe()
+}
+
+// createOverpassDataSource creates an Overpass datasource from configuration.
+// Supports both single-server and multi-server (geographic routing) configurations.
+func createOverpassDataSource(overpassWorkers int, logger *slog.Logger) pipeline.DataSource {
+	// Check for multi-server configuration
+	if viper.IsSet("overpass.servers") {
+		var configs []map[string]interface{}
+		if err := viper.UnmarshalKey("overpass.servers", &configs); err == nil && len(configs) > 0 {
+			return createMultiServerDataSource(configs, logger)
+		}
+	}
+
+	// Fall back to single-server configuration
+	endpoint := viper.GetString("overpass.endpoint")
+	if endpoint == "" {
+		endpoint = "https://overpass-api.de/api/interpreter"
+	}
+
+	logger.Info("Using single Overpass server", "endpoint", endpoint, "workers", overpassWorkers)
+	return datasource.NewOverpassDataSourceWithWorkers(endpoint, overpassWorkers)
+}
+
+// createMultiServerDataSource creates a multi-server routing datasource from config.
+func createMultiServerDataSource(configs []map[string]interface{}, logger *slog.Logger) pipeline.DataSource {
+	var serverConfigs []datasource.ServerConfig
+
+	for i, cfg := range configs {
+		endpoint := getStringOrDefault(cfg, "endpoint", "https://overpass-api.de/api/interpreter")
+		workers := getIntOrDefault(cfg, "workers", 2)
+		name := getStringOrDefault(cfg, "name", fmt.Sprintf("Server-%d", i+1))
+
+		sc := datasource.ServerConfig{
+			Endpoint: endpoint,
+			Workers:  workers,
+			Name:     name,
+		}
+
+		// Parse coverage area if specified
+		if coverageMap, ok := cfg["coverage"].(map[string]interface{}); ok {
+			minLat := getFloat64OrDefault(coverageMap, "min_lat", 0)
+			maxLat := getFloat64OrDefault(coverageMap, "max_lat", 0)
+			minLon := getFloat64OrDefault(coverageMap, "min_lon", 0)
+			maxLon := getFloat64OrDefault(coverageMap, "max_lon", 0)
+
+			if minLat != 0 || maxLat != 0 || minLon != 0 || maxLon != 0 {
+				sc.Coverage = &types.BoundingBox{
+					MinLat: minLat,
+					MaxLat: maxLat,
+					MinLon: minLon,
+					MaxLon: maxLon,
+				}
+				logger.Info("Configured regional Overpass server",
+					"name", name,
+					"endpoint", endpoint,
+					"workers", workers,
+					"coverage", fmt.Sprintf("%.2f,%.2f to %.2f,%.2f", minLat, minLon, maxLat, maxLon))
+			} else {
+				logger.Info("Configured fallback Overpass server",
+					"name", name,
+					"endpoint", endpoint,
+					"workers", workers)
+			}
+		} else {
+			logger.Info("Configured fallback Overpass server",
+				"name", name,
+				"endpoint", endpoint,
+				"workers", workers)
+		}
+
+		serverConfigs = append(serverConfigs, sc)
+	}
+
+	return datasource.NewMultiOverpassDataSource(serverConfigs...)
+}
+
+// Helper functions for config parsing
+func getStringOrDefault(m map[string]interface{}, key, defaultVal string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return defaultVal
+}
+
+func getIntOrDefault(m map[string]interface{}, key string, defaultVal int) int {
+	if v, ok := m[key].(float64); ok {
+		return int(v)
+	}
+	if v, ok := m[key].(int); ok {
+		return v
+	}
+	return defaultVal
+}
+
+func getFloat64OrDefault(m map[string]interface{}, key string, defaultVal float64) float64 {
+	if v, ok := m[key].(float64); ok {
+		return v
+	}
+	if v, ok := m[key].(int); ok {
+		return float64(v)
+	}
+	return defaultVal
 }
 
 func withCORS(next http.Handler) http.Handler {

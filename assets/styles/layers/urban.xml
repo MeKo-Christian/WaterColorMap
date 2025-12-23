@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Map background-color="#00000000" srs="+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs +over">
 
-  <!-- Civic Areas/Buildings Layer Style -->
-  <!-- Renders buildings and civic features in lilac (#C080C0) for mask extraction -->
+  <!-- Urban Areas Layer Style -->
+  <!-- Renders urban landuse areas (residential/commercial/industrial) and civic buildings -->
+  <!-- Uses gray/lilac (#C080C0) for mask extraction, textured with urban.png -->
 
-  <Style name="civic">
+  <Style name="urban">
     <Rule>
-      <!-- Buildings and civic structures -->
+      <!-- Urban landuse zones and civic buildings -->
       <PolygonSymbolizer fill="#C080C0" clip="false" />
     </Rule>
   </Style>
 
   <!-- Data Layer -->
-  <Layer name="civic" srs="+proj=longlat +datum=WGS84 +no_defs">
-    <StyleName>civic</StyleName>
+  <Layer name="urban" srs="+proj=longlat +datum=WGS84 +no_defs">
+    <StyleName>urban</StyleName>
     <Datasource>
       <Parameter name="type">ogr</Parameter>
       <Parameter name="file">DATASOURCE_PLACEHOLDER</Parameter>

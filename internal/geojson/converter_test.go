@@ -114,7 +114,7 @@ func TestGetLayerFeatures(t *testing.T) {
 			{ID: "building2", Type: types.FeatureTypeBuilding},
 		},
 		Civic: []types.Feature{
-			{ID: "civic1", Type: types.FeatureTypeCivic},
+			{ID: "civic1", Type: types.FeatureTypeUrban},
 		},
 		Roads: []types.Feature{
 			{ID: "road1", Type: types.FeatureTypeRoad},
@@ -135,10 +135,10 @@ func TestGetLayerFeatures(t *testing.T) {
 		t.Errorf("Expected 1 park feature, got %d", len(parkFeatures))
 	}
 
-	// Test civic layer (civic only, buildings are separate)
-	civicFeatures := GetLayerFeatures(fc, LayerCivic)
-	if len(civicFeatures) != 1 {
-		t.Errorf("Expected 1 civic feature, got %d", len(civicFeatures))
+	// Test urban layer (urban only, buildings are separate)
+	urbanFeatures := GetLayerFeatures(fc, LayerUrban)
+	if len(urbanFeatures) != 1 {
+		t.Errorf("Expected 1 urban feature, got %d", len(urbanFeatures))
 	}
 
 	// Test buildings layer
@@ -154,7 +154,7 @@ func TestGetLayerFeatures(t *testing.T) {
 	}
 
 	t.Logf("Layer extraction: Water=%d, Parks=%d, Civic=%d, Buildings=%d, Roads=%d",
-		len(waterFeatures), len(parkFeatures), len(civicFeatures), len(buildingFeatures), len(roadFeatures))
+		len(waterFeatures), len(parkFeatures), len(urbanFeatures), len(buildingFeatures), len(roadFeatures))
 }
 
 func TestLayerCount(t *testing.T) {
@@ -174,8 +174,8 @@ func TestLayerCount(t *testing.T) {
 		t.Errorf("Expected 3 park features, got %d", LayerCount(fc, LayerParks))
 	}
 	// Civic is separate from buildings now
-	if LayerCount(fc, LayerCivic) != 2 {
-		t.Errorf("Expected 2 civic features, got %d", LayerCount(fc, LayerCivic))
+	if LayerCount(fc, LayerUrban) != 2 {
+		t.Errorf("Expected 2 urban features, got %d", LayerCount(fc, LayerUrban))
 	}
 	if LayerCount(fc, LayerBuildings) != 10 {
 		t.Errorf("Expected 10 building features, got %d", LayerCount(fc, LayerBuildings))

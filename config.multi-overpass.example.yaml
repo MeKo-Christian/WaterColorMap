@@ -1,0 +1,81 @@
+# WaterColorMap Multi-Server Overpass Configuration Example
+# This demonstrates how to configure multiple Overpass API servers with geographic routing
+
+# Data source configuration
+data-source: "overpass"
+
+# Output settings
+output-dir: "./tiles"
+
+# Verbose logging
+verbose: false
+log-level: "info"
+
+# Multi-server Overpass API configuration
+# Servers are checked in order; the first matching coverage area is used.
+# Always include a fallback server with no coverage area at the end.
+overpass:
+  servers:
+    # Local Niedersachsen instance (fast, covers Lower Saxony, Germany)
+    - name: "Niedersachsen"
+      endpoint: "http://localhost:12345/api/interpreter"
+      workers: 10  # Higher parallelism for local instance
+      coverage:
+        min_lat: 51.3   # Southern edge of Niedersachsen
+        max_lat: 53.9   # Northern edge (includes coastal areas)
+        min_lon: 6.6    # Western edge
+        max_lon: 11.6   # Eastern edge
+
+    # Public Overpass instance (fallback for rest of world)
+    - name: "Public"
+      endpoint: "https://overpass-api.de/api/interpreter"
+      workers: 2  # Conservative for public API
+      # No coverage specified = matches everything
+
+# Alternative: Single server configuration (legacy format, still supported)
+# If you uncomment this and remove overpass.servers above, it uses single-server mode
+# overpass:
+#   endpoint: "https://overpass-api.de/api/interpreter"
+#   timeout: 30s
+#   rate-limit: 2
+
+# Tile generation settings
+tile:
+  width: 256
+  height: 256
+  format: "png"
+  dpi: 96
+  cache-enabled: true
+  cache-dir: "./cache"
+
+# Feature rendering configuration
+rendering:
+  textures:
+    path: "./assets/textures"
+    water: "water.png"
+    land: "land.png"
+    park: "park.png"
+    forest: "forest.png"
+
+  layers:
+    - water
+    - land
+    - parks
+    - forests
+    - roads
+    - buildings
+
+  colors:
+    water: "#a5bfdd"
+    land: "#f2efe9"
+    park: "#c8e6c9"
+    forest: "#81c784"
+    road: "#ffffff"
+    building: "#e0e0e0"
+
+# Geographic coverage notes:
+# - Niedersachsen (Lower Saxony): 51.3°N to 53.9°N, 6.6°E to 11.6°E
+#   Covers: Hannover, Braunschweig, Osnabrück, Oldenburg, Göttingen, Wolfsburg
+# - For other regions, add additional server entries with their coverage areas
+# - Coverage areas can overlap; first match wins
+# - At least one server should have no coverage (fallback)

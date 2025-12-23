@@ -10,6 +10,46 @@ import (
 	"github.com/MeKo-Tech/watercolormap/internal/types"
 )
 
+// OverpassConfig contains configuration for the Overpass API client.
+type OverpassConfig struct {
+	// Endpoint is the Overpass API URL (default: https://overpass-api.de/api/interpreter)
+	Endpoint string
+	// Workers controls parallelism (default: 2 for public API, increase for private instances)
+	Workers int
+	// RetryConfig configures retry behavior with exponential backoff
+	RetryConfig *overpass.RetryConfig
+	// HTTPClient allows custom HTTP client (default: http.DefaultClient)
+	HTTPClient *http.Client
+}
+
+// DefaultOverpassConfig returns sensible defaults for public Overpass API.
+func DefaultOverpassConfig() OverpassConfig {
+	retryConfig := overpass.DefaultRetryConfig()
+	return OverpassConfig{
+		Endpoint:    "https://overpass-api.de/api/interpreter",
+		Workers:     2,
+		RetryConfig: &retryConfig,
+		HTTPClient:  http.DefaultClient,
+	}
+}
+
+// PrivateInstanceConfig returns config optimized for a private Overpass instance.
+// Uses more aggressive retries and higher parallelism.
+func PrivateInstanceConfig(endpoint string) OverpassConfig {
+	return OverpassConfig{
+		Endpoint: endpoint,
+		Workers:  10, // Higher parallelism for private instance
+		RetryConfig: &overpass.RetryConfig{
+			MaxRetries:        5,
+			InitialBackoff:    500 * time.Millisecond,
+			MaxBackoff:        10 * time.Second,
+			BackoffMultiplier: 1.5,
+			Jitter:            true, // Prevents thundering herd
+		},
+		HTTPClient: http.DefaultClient,
+	}
+}
+
 // OverpassDataSource fetches OSM data from Overpass API
 type OverpassDataSource struct {
 	client           overpass.Client
@@ -17,18 +57,56 @@ type OverpassDataSource struct {
 	clipGeomToBbox   bool // If true, uses "out geom(bbox)" - DO NOT USE (known Overpass API bug)
 }
 
-// NewOverpassDataSource creates a new Overpass data source
+// NewOverpassDataSource creates a new Overpass data source with default settings.
+// Use NewOverpassDataSourceWithWorkers for configurable parallelism.
 func NewOverpassDataSource(endpoint string) *OverpassDataSource {
-	if endpoint == "" {
-		endpoint = "https://overpass-api.de/api/interpreter"
+	return NewOverpassDataSourceWithWorkers(endpoint, 2)
+}
+
+// NewOverpassDataSourceWithWorkers creates a new Overpass data source with configurable parallelism.
+// workers controls how many parallel requests can be made to the Overpass API.
+// For the public overpass-api.de, 2-4 workers is reasonable; for a local instance, use more.
+func NewOverpassDataSourceWithWorkers(endpoint string, workers int) *OverpassDataSource {
+	cfg := DefaultOverpassConfig()
+	if endpoint != "" {
+		cfg.Endpoint = endpoint
+	}
+	if workers > 0 {
+		cfg.Workers = workers
+	}
+	return NewOverpassDataSourceWithConfig(cfg)
+}
+
+// NewOverpassDataSourceWithConfig creates a new Overpass data source with full configuration.
+// This is the recommended way to create a datasource with retry support.
+func NewOverpassDataSourceWithConfig(cfg OverpassConfig) *OverpassDataSource {
+	if cfg.Endpoint == "" {
+		cfg.Endpoint = "https://overpass-api.de/api/interpreter"
+	}
+	if cfg.Workers < 1 {
+		cfg.Workers = 2
+	}
+	if cfg.HTTPClient == nil {
+		cfg.HTTPClient = http.DefaultClient
 	}
 
-	// Create client (rate limited to 1 concurrent request)
-	client := overpass.NewWithSettings(
-		endpoint,
-		1, // Only 1 parallel request (API etiquette)
-		http.DefaultClient,
-	)
+	var client overpass.Client
+	if cfg.RetryConfig != nil {
+		// Use retry-enabled client for resilience
+		client = overpass.NewWithRetry(
+			cfg.Endpoint,
+			cfg.Workers,
+			cfg.HTTPClient,
+			*cfg.RetryConfig,
+		)
+	} else {
+		// Fall back to non-retry client
+		client = overpass.NewWithSettings(
+			cfg.Endpoint,
+			cfg.Workers,
+			cfg.HTTPClient,
+		)
+	}
 
 	return &OverpassDataSource{
 		client:           client,
@@ -69,8 +147,8 @@ func (ds *OverpassDataSource) FetchTileData(ctx context.Context, tile types.Tile
 // This is useful for "metatile" rendering where we need data slightly outside
 // the tile bounds (e.g. to support post-processing blurs without seams).
 func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile types.TileCoordinate, bounds types.BoundingBox) (*types.TileData, error) {
-	// Build Overpass QL query manually
-	query := ds.buildTileQuery(bounds)
+	// Build Overpass QL query with zoom-based filtering
+	query := ds.buildTileQuery(bounds, tile.Zoom)
 
 	// Execute query (note: this version doesn't support context)
 	result, err := ds.client.Query(query)
@@ -80,6 +158,13 @@ func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile 
 
 	// Convert to feature collection
 	features := ExtractFeaturesFromOverpassResult(&result)
+
+	// Validate that we got expected data based on zoom level.
+	// At zoom 5-13, we should always have roads/highways in any tile over land.
+	// An empty response likely indicates Overpass timeout or incomplete data.
+	if err := validateFeatureResponse(features, tile.Zoom); err != nil {
+		return nil, err
+	}
 
 	tileData := &types.TileData{
 		Coordinate: tile,
@@ -99,6 +184,7 @@ func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile 
 
 // buildTileQuery creates a comprehensive Overpass QL query for tile features.
 // It fetches COMPLETE unclipped geometry for all ways that intersect the bounding box.
+// Features are filtered based on zoom level to reduce data at lower zooms.
 //
 // IMPORTANT: Uses "out geom qt;" to return COMPLETE geometry (not clipped to bbox).
 // This prevents polygon clipping artifacts at tile boundaries.
@@ -112,7 +198,7 @@ func (ds *OverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile 
 // - "geom" returns complete geometry for ways intersecting the bbox
 // - "geom(bbox)" clips geometry to bbox (BROKEN - causes malformed geometry)
 // - "qt" (quiet) omits metadata (version, changeset, timestamp, user, uid)
-func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
+func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox, zoom int) string {
 	// Build query with all feature types we need.
 	// IMPORTANT: We use per-element bbox filters (south,west,north,east) instead of
 	// the global [bbox:] setting. When using per-element bbox filters with "out geom",
@@ -129,29 +215,236 @@ func (ds *OverpassDataSource) buildTileQuery(bounds types.BoundingBox) string {
 		outputMode = "out geom qt;"
 	}
 
-	return fmt.Sprintf(`
-[out:json][timeout:60];
-(
-  way["natural"="water"](%s);
-  way["natural"="coastline"](%s);
-  relation["natural"="water"](%s);
-  way["waterway"](%s);
-  relation["waterway"](%s);
-  way["leisure"="park"](%s);
-  way["leisure"="garden"](%s);
-  way["leisure"="playground"](%s);
-  way["landuse"="forest"](%s);
-  way["landuse"="grass"](%s);
-  way["landuse"="meadow"](%s);
-  relation["leisure"="park"](%s);
-  way["highway"](%s);
-  way["building"](%s);
-  way["amenity"="school"](%s);
-  way["amenity"="hospital"](%s);
-  way["amenity"="university"](%s);
-);
-%s
-`, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, bbox, outputMode)
+	// Build zoom-dependent query parts
+	var queryParts []string
+
+	// Water features (blues)
+	queryParts = append(queryParts, ds.buildWaterQuery(bbox, zoom)...)
+
+	// Parks/greens features
+	queryParts = append(queryParts, ds.buildParksQuery(bbox, zoom)...)
+
+	// Roads features
+	queryParts = append(queryParts, ds.buildRoadsQuery(bbox, zoom)...)
+
+	// Buildings and urban (only at higher zooms)
+	queryParts = append(queryParts, ds.buildBuildingsQuery(bbox, zoom)...)
+
+	// Build final query
+	query := "[out:json][timeout:60];\n(\n"
+	for _, part := range queryParts {
+		query += "  " + part + "\n"
+	}
+	query += ");\n" + outputMode
+
+	return query
+}
+
+// buildWaterQuery returns water-related query parts based on zoom level.
+// Zoom-based filtering:
+//   - All zooms: Coastlines + large water bodies
+//   - z10-11: + major rivers
+//   - z12-13: + rivers/streams/canals
+//   - z14+: All waterways
+func (ds *OverpassDataSource) buildWaterQuery(bbox string, zoom int) []string {
+	var parts []string
+
+	// Coastlines and water bodies - always include at all zoom levels
+	// NOTE: OSM does NOT include ocean polygons in raw data. Ocean is represented
+	// as "absence of land". This causes ocean tiles to render as land (tan background).
+	// See PLAN.md section 4.10 for ocean rendering solutions (water polygons or synthesis).
+	parts = append(parts,
+		fmt.Sprintf(`way["natural"="water"](%s);`, bbox),
+		fmt.Sprintf(`way["natural"="coastline"](%s);`, bbox),
+		fmt.Sprintf(`relation["natural"="water"](%s);`, bbox),
+	)
+
+	// Rivers and waterways - progressively add detail
+	if zoom >= 10 {
+		if zoom >= 14 {
+			// z14+: All waterways
+			parts = append(parts,
+				fmt.Sprintf(`way["waterway"](%s);`, bbox),
+				fmt.Sprintf(`relation["waterway"](%s);`, bbox),
+			)
+		} else if zoom >= 12 {
+			// z12-13: Rivers, streams, canals (no drains/ditches)
+			parts = append(parts,
+				fmt.Sprintf(`way["waterway"~"river|stream|canal"](%s);`, bbox),
+				fmt.Sprintf(`relation["waterway"~"river|stream|canal"](%s);`, bbox),
+			)
+		} else {
+			// z10-11: Major rivers only
+			parts = append(parts,
+				fmt.Sprintf(`way["waterway"="river"](%s);`, bbox),
+				fmt.Sprintf(`relation["waterway"="river"](%s);`, bbox),
+			)
+		}
+	}
+
+	return parts
+}
+
+// buildParksQuery returns parks/green space query parts based on zoom level.
+// Zoom-based filtering:
+//   - All zooms: Large forests and woods (major geographic features)
+//   - z8-9: + parks
+//   - z10-11: + meadows and grass
+//   - z14-15: + gardens
+//   - z16+: + playgrounds
+func (ds *OverpassDataSource) buildParksQuery(bbox string, zoom int) []string {
+	var parts []string
+
+	// Forests and woods - always include at all zoom levels (major geographic features like water)
+	// Include both ways and relations for complete coverage of large forest areas
+	parts = append(parts,
+		fmt.Sprintf(`way["landuse"="forest"](%s);`, bbox),
+		fmt.Sprintf(`relation["landuse"="forest"](%s);`, bbox),
+		fmt.Sprintf(`way["natural"="wood"](%s);`, bbox),
+		fmt.Sprintf(`relation["natural"="wood"](%s);`, bbox),
+	)
+
+	if zoom >= 8 {
+		// z8+: Add parks, nature reserves, and heath (like Lüneburger Heide)
+		parts = append(parts,
+			fmt.Sprintf(`way["leisure"="park"](%s);`, bbox),
+			fmt.Sprintf(`relation["leisure"="park"](%s);`, bbox),
+			fmt.Sprintf(`way["leisure"="nature_reserve"](%s);`, bbox),
+			fmt.Sprintf(`relation["leisure"="nature_reserve"](%s);`, bbox),
+			fmt.Sprintf(`way["natural"="heath"](%s);`, bbox),
+			fmt.Sprintf(`relation["natural"="heath"](%s);`, bbox),
+		)
+	}
+
+	if zoom >= 10 {
+		// z10+: Add meadows, grass, and farmland
+		parts = append(parts,
+			fmt.Sprintf(`way["landuse"="grass"](%s);`, bbox),
+			fmt.Sprintf(`way["landuse"="meadow"](%s);`, bbox),
+			fmt.Sprintf(`way["landuse"="farmland"](%s);`, bbox),
+			fmt.Sprintf(`way["natural"="grassland"](%s);`, bbox),
+			fmt.Sprintf(`way["natural"="heath"](%s);`, bbox),
+		)
+	}
+
+	if zoom >= 14 {
+		// z14+: Add gardens and orchards
+		parts = append(parts,
+			fmt.Sprintf(`way["leisure"="garden"](%s);`, bbox),
+			fmt.Sprintf(`way["landuse"="orchard"](%s);`, bbox),
+			fmt.Sprintf(`way["landuse"="vineyard"](%s);`, bbox),
+		)
+	}
+
+	if zoom >= 16 {
+		// z16+: Add playgrounds and allotments
+		parts = append(parts,
+			fmt.Sprintf(`way["leisure"="playground"](%s);`, bbox),
+			fmt.Sprintf(`way["landuse"="allotments"](%s);`, bbox),
+		)
+	}
+
+	return parts
+}
+
+// buildRoadsQuery returns road query parts based on zoom level.
+// Zoom-based filtering:
+//   - z<5: No roads
+//   - z5-7: Motorway only
+//   - z8-9: Motorway + trunk
+//   - z10-11: + primary
+//   - z12-13: + secondary, tertiary
+//   - z14-15: + residential, unclassified
+//   - z16+: All roads
+func (ds *OverpassDataSource) buildRoadsQuery(bbox string, zoom int) []string {
+	if zoom < 5 {
+		// No roads at very low zooms
+		return nil
+	}
+
+	if zoom < 8 {
+		// z5-7: Motorway only for overview
+		return []string{
+			fmt.Sprintf(`way["highway"~"motorway|motorway_link"](%s);`, bbox),
+		}
+	}
+
+	if zoom < 10 {
+		// z8-9: Motorway + trunk + primary for visibility at low zoom
+		return []string{
+			fmt.Sprintf(`way["highway"~"motorway|motorway_link|trunk|trunk_link|primary|primary_link"](%s);`, bbox),
+		}
+	}
+
+	var parts []string
+
+	if zoom >= 16 {
+		// z16+: All roads
+		parts = append(parts, fmt.Sprintf(`way["highway"](%s);`, bbox))
+	} else if zoom >= 14 {
+		// z14-15: Major + residential (no service, track, path, footway, etc.)
+		parts = append(parts,
+			fmt.Sprintf(`way["highway"~"motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|residential|unclassified|living_street"](%s);`, bbox),
+		)
+	} else if zoom >= 12 {
+		// z12-13: Major roads + secondary/tertiary
+		parts = append(parts,
+			fmt.Sprintf(`way["highway"~"motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link"](%s);`, bbox),
+		)
+	} else {
+		// z10-11: Major roads only
+		parts = append(parts,
+			fmt.Sprintf(`way["highway"~"motorway|motorway_link|trunk|trunk_link|primary|primary_link"](%s);`, bbox),
+		)
+	}
+
+	return parts
+}
+
+// buildBuildingsQuery returns building and urban area query parts based on zoom level.
+// Zoom-based filtering:
+//   - z<11: Nothing
+//   - z11-13: Urban landuse areas (residential, commercial, industrial, retail)
+//   - z14-15: Urban areas + urban buildings (schools, hospitals, universities)
+//   - z16+: Urban areas + urban buildings + all individual buildings
+func (ds *OverpassDataSource) buildBuildingsQuery(bbox string, zoom int) []string {
+	if zoom < 11 {
+		// No buildings or urban areas at very low zooms
+		return nil
+	}
+
+	var parts []string
+
+	// Urban landuse areas - from z11+
+	// These show built-up areas to identify towns/cities at medium zooms
+	if zoom >= 11 {
+		parts = append(parts,
+			fmt.Sprintf(`way["landuse"="residential"](%s);`, bbox),
+			fmt.Sprintf(`relation["landuse"="residential"](%s);`, bbox),
+			fmt.Sprintf(`way["landuse"="commercial"](%s);`, bbox),
+			fmt.Sprintf(`relation["landuse"="commercial"](%s);`, bbox),
+			fmt.Sprintf(`way["landuse"="industrial"](%s);`, bbox),
+			fmt.Sprintf(`relation["landuse"="industrial"](%s);`, bbox),
+			fmt.Sprintf(`way["landuse"="retail"](%s);`, bbox),
+			fmt.Sprintf(`relation["landuse"="retail"](%s);`, bbox),
+		)
+	}
+
+	// Civic buildings - from z14+
+	if zoom >= 14 {
+		parts = append(parts,
+			fmt.Sprintf(`way["amenity"="school"](%s);`, bbox),
+			fmt.Sprintf(`way["amenity"="hospital"](%s);`, bbox),
+			fmt.Sprintf(`way["amenity"="university"](%s);`, bbox),
+		)
+	}
+
+	// Individual buildings - from z16+
+	if zoom >= 16 {
+		parts = append(parts, fmt.Sprintf(`way["building"](%s);`, bbox))
+	}
+
+	return parts
 }
 
 // Close cleans up resources (no-op for current version)
@@ -167,4 +460,176 @@ func (ds *OverpassDataSource) ClearCache() {
 // CacheSize returns 0 (no cache in current version)
 func (ds *OverpassDataSource) CacheSize() int {
 	return 0
+}
+
+// ServerConfig defines configuration for a single Overpass server with its coverage area.
+type ServerConfig struct {
+	// Endpoint is the Overpass API URL
+	Endpoint string
+	// Workers controls parallelism for this server
+	Workers int
+	// RetryConfig configures retry behavior
+	RetryConfig *overpass.RetryConfig
+	// HTTPClient allows custom HTTP client
+	HTTPClient *http.Client
+	// Coverage defines the geographic area this server covers (nil = covers everything)
+	Coverage *types.BoundingBox
+	// Name is an optional human-readable name for logging (e.g., "Niedersachsen", "Public")
+	Name string
+}
+
+// MultiOverpassDataSource routes queries to different Overpass servers based on geography.
+// It checks tile coordinates against coverage areas and delegates to the appropriate server.
+type MultiOverpassDataSource struct {
+	servers []serverInstance
+}
+
+type serverInstance struct {
+	datasource *OverpassDataSource
+	coverage   *types.BoundingBox
+	name       string
+}
+
+// NewMultiOverpassDataSource creates a datasource that routes to multiple Overpass servers.
+// Servers are checked in order; the first server whose coverage contains the tile is used.
+// At least one server with nil coverage (default/fallback) should be provided.
+//
+// Example:
+//   ds := NewMultiOverpassDataSource(
+//       ServerConfig{
+//           Endpoint: "http://localhost:12345/api/interpreter",
+//           Workers:  10,
+//           Coverage: &types.BoundingBox{MinLat: 51.3, MaxLat: 53.9, MinLon: 6.6, MaxLon: 11.6},
+//           Name:     "Niedersachsen",
+//       },
+//       ServerConfig{
+//           Endpoint: "https://overpass-api.de/api/interpreter",
+//           Workers:  2,
+//           Coverage: nil, // Fallback for rest of world
+//           Name:     "Public",
+//       },
+//   )
+func NewMultiOverpassDataSource(configs ...ServerConfig) *MultiOverpassDataSource {
+	servers := make([]serverInstance, 0, len(configs))
+
+	for _, cfg := range configs {
+		// Build OverpassConfig from ServerConfig
+		ovConfig := OverpassConfig{
+			Endpoint:    cfg.Endpoint,
+			Workers:     cfg.Workers,
+			RetryConfig: cfg.RetryConfig,
+			HTTPClient:  cfg.HTTPClient,
+		}
+
+		// Apply defaults if needed
+		if ovConfig.Endpoint == "" {
+			ovConfig.Endpoint = "https://overpass-api.de/api/interpreter"
+		}
+		if ovConfig.Workers < 1 {
+			ovConfig.Workers = 2
+		}
+		if ovConfig.RetryConfig == nil {
+			defaultRetry := overpass.DefaultRetryConfig()
+			ovConfig.RetryConfig = &defaultRetry
+		}
+
+		servers = append(servers, serverInstance{
+			datasource: NewOverpassDataSourceWithConfig(ovConfig),
+			coverage:   cfg.Coverage,
+			name:       cfg.Name,
+		})
+	}
+
+	return &MultiOverpassDataSource{servers: servers}
+}
+
+// FetchTileData routes the query to the appropriate Overpass server based on tile location.
+func (mds *MultiOverpassDataSource) FetchTileData(ctx context.Context, tile types.TileCoordinate) (*types.TileData, error) {
+	bounds := types.TileToBounds(tile)
+	return mds.FetchTileDataWithBounds(ctx, tile, bounds)
+}
+
+// FetchTileDataWithBounds routes the query to the appropriate Overpass server.
+func (mds *MultiOverpassDataSource) FetchTileDataWithBounds(ctx context.Context, tile types.TileCoordinate, bounds types.BoundingBox) (*types.TileData, error) {
+	// Find the first server whose coverage contains this tile
+	for _, srv := range mds.servers {
+		if srv.coverage == nil || intersects(bounds, *srv.coverage) {
+			// Found a matching server - delegate to it
+			data, err := srv.datasource.FetchTileDataWithBounds(ctx, tile, bounds)
+			if err != nil {
+				// Include server name in error for debugging
+				return nil, fmt.Errorf("[%s] %w", srv.name, err)
+			}
+			return data, nil
+		}
+	}
+
+	// No server matched (shouldn't happen if you have a nil-coverage fallback)
+	return nil, fmt.Errorf("no overpass server configured for tile %s", tile)
+}
+
+// intersects checks if two bounding boxes overlap.
+// Returns true if they share any geographic area.
+func intersects(a, b types.BoundingBox) bool {
+	// Boxes intersect if they overlap in both longitude and latitude
+	lonOverlap := a.MinLon <= b.MaxLon && a.MaxLon >= b.MinLon
+	latOverlap := a.MinLat <= b.MaxLat && a.MaxLat >= b.MinLat
+	return lonOverlap && latOverlap
+}
+
+// Close cleans up all underlying datasources.
+func (mds *MultiOverpassDataSource) Close() error {
+	for _, srv := range mds.servers {
+		if err := srv.datasource.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ClearCache clears cache for all underlying datasources.
+func (mds *MultiOverpassDataSource) ClearCache() {
+	for _, srv := range mds.servers {
+		srv.datasource.ClearCache()
+	}
+}
+
+// CacheSize returns total cache size across all underlying datasources.
+func (mds *MultiOverpassDataSource) CacheSize() int {
+	total := 0
+	for _, srv := range mds.servers {
+		total += srv.datasource.CacheSize()
+	}
+	return total
+}
+
+// ErrEmptyOverpassResponse indicates Overpass returned no data when features were expected.
+// This is a transient error that should trigger a retry.
+var ErrEmptyOverpassResponse = fmt.Errorf("overpass returned empty response")
+
+// validateFeatureResponse checks if the Overpass response contains expected data.
+// An empty response at mid-zoom levels likely indicates a timeout or incomplete data.
+//
+// Zoom level expectations:
+//   - z5-7: Skip validation - tiles are huge, many are ocean/empty, and Overpass
+//     often rate-limits or times out. Errors are already caught by query failure.
+//   - z8-13: Should have SOME features (roads, water, parks, forests)
+//   - z14+: May legitimately have no features (e.g., empty forest/field tiles)
+//
+// We check for ANY features to detect silent Overpass failures that return
+// success with empty data (as opposed to explicit 429/504 errors).
+func validateFeatureResponse(features types.FeatureCollection, zoom int) error {
+	// Count all features including rivers
+	totalFeatures := len(features.Water) + len(features.Rivers) + len(features.Parks) +
+		len(features.Roads) + len(features.Buildings) + len(features.Urban)
+
+	// At zoom 8-13, if we have ZERO features of any kind, it's suspicious.
+	// Real land tiles should have at least forests, parks, water, or roads.
+	// We skip z5-7 because those tiles are huge and often legitimately empty (ocean),
+	// plus explicit Overpass errors (429, 504) are already handled by retry logic.
+	if zoom >= 8 && zoom <= 13 && totalFeatures == 0 {
+		return fmt.Errorf("%w: zoom %d tile has no features (expected roads/forests/water)", ErrEmptyOverpassResponse, zoom)
+	}
+
+	return nil
 }

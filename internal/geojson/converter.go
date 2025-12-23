@@ -16,8 +16,8 @@ const (
 	LayerRivers    LayerType = "rivers" // Linear waterways (rivers, streams, canals)
 	LayerLand      LayerType = "land"
 	LayerParks     LayerType = "parks"
-	LayerCivic     LayerType = "civic"     // Civic areas (lighter lavender)
-	LayerBuildings LayerType = "buildings" // Buildings (darker lavender)
+	LayerUrban     LayerType = "urban"     // Urban landuse areas and urban buildings
+	LayerBuildings LayerType = "buildings" // Individual building footprints
 	LayerRoads     LayerType = "roads"
 	LayerHighways  LayerType = "highways"
 	LayerPaper     LayerType = "paper"
@@ -84,9 +84,9 @@ func GetLayerFeatures(fc types.FeatureCollection, layer LayerType) []types.Featu
 		return fc.Rivers
 	case LayerParks:
 		return fc.Parks
-	case LayerCivic:
-		// Return only civic areas (not buildings)
-		return fc.Civic
+	case LayerUrban:
+		// Return urban landuse areas and urban buildings (not individual building footprints)
+		return fc.Urban
 	case LayerBuildings:
 		// Return only buildings
 		return fc.Buildings
@@ -118,6 +118,6 @@ func LayerCount(fc types.FeatureCollection, layer LayerType) int {
 
 // LayerSummary returns a summary of features per layer
 func LayerSummary(fc types.FeatureCollection) string {
-	return fmt.Sprintf("Water: %d, Parks: %d, Civic: %d, Buildings: %d, Roads: %d (Total: %d)",
-		len(fc.Water), len(fc.Parks), len(fc.Civic), len(fc.Buildings), len(fc.Roads), fc.Count())
+	return fmt.Sprintf("Water: %d, Parks: %d, Urban: %d, Buildings: %d, Roads: %d (Total: %d)",
+		len(fc.Water), len(fc.Parks), len(fc.Urban), len(fc.Buildings), len(fc.Roads), fc.Count())
 }

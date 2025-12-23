@@ -62,14 +62,14 @@ func ExtractFeaturesFromOverpassResult(result *overpass.Result) types.FeatureCol
 			features.Water = append(features.Water, *feature)
 		case isRiver(way.Tags):
 			features.Rivers = append(features.Rivers, *feature)
-		case isPark(way.Tags):
+		case isGreen(way.Tags):
 			features.Parks = append(features.Parks, *feature)
 		case isRoad(way.Tags):
 			features.Roads = append(features.Roads, *feature)
 		case isBuilding(way.Tags):
 			features.Buildings = append(features.Buildings, *feature)
-		case isCivic(way.Tags):
-			features.Civic = append(features.Civic, *feature)
+		case isUrban(way.Tags):
+			features.Urban = append(features.Urban, *feature)
 		}
 	}
 
@@ -93,7 +93,7 @@ func ExtractFeaturesFromOverpassResult(result *overpass.Result) types.FeatureCol
 			features.Water = append(features.Water, *feature)
 		case isRiver(rel.Tags):
 			features.Rivers = append(features.Rivers, *feature)
-		case isPark(rel.Tags):
+		case isGreen(rel.Tags):
 			features.Parks = append(features.Parks, *feature)
 		}
 	}
@@ -252,7 +252,7 @@ func categorizeByTags(tags map[string]string) types.FeatureType {
 	if isWater(tags) {
 		return types.FeatureTypeWater
 	}
-	if isPark(tags) {
+	if isGreen(tags) {
 		return types.FeatureTypePark
 	}
 	if isRoad(tags) {
@@ -261,8 +261,8 @@ func categorizeByTags(tags map[string]string) types.FeatureType {
 	if isBuilding(tags) {
 		return types.FeatureTypeBuilding
 	}
-	if isCivic(tags) {
-		return types.FeatureTypeCivic
+	if isUrban(tags) {
+		return types.FeatureTypeUrban
 	}
 	return types.FeatureTypeUnknown
 }
@@ -270,6 +270,8 @@ func categorizeByTags(tags map[string]string) types.FeatureType {
 func isWater(tags map[string]string) bool {
 	// Only include polygonal water bodies, not linear waterways
 	// Waterways are now handled separately in isRiver()
+	// NOTE: natural=sea and place=sea are NOT area polygons (they're points or don't exist)
+	// Ocean tiles will not render correctly - see PLAN.md section 4.10
 	return tags["natural"] == "water" ||
 		tags["natural"] == "coastline"
 }
@@ -280,13 +282,21 @@ func isRiver(tags map[string]string) bool {
 	return tags["waterway"] != ""
 }
 
-func isPark(tags map[string]string) bool {
+func isGreen(tags map[string]string) bool {
 	return tags["leisure"] == "park" ||
 		tags["leisure"] == "garden" ||
 		tags["leisure"] == "playground" ||
+		tags["leisure"] == "nature_reserve" ||
 		tags["landuse"] == "forest" ||
 		tags["landuse"] == "grass" ||
-		tags["landuse"] == "meadow"
+		tags["landuse"] == "meadow" ||
+		tags["landuse"] == "farmland" ||
+		tags["landuse"] == "orchard" ||
+		tags["landuse"] == "vineyard" ||
+		tags["landuse"] == "allotments" ||
+		tags["natural"] == "wood" ||
+		tags["natural"] == "heath" ||
+		tags["natural"] == "grassland"
 }
 
 func isRoad(tags map[string]string) bool {
@@ -297,9 +307,17 @@ func isBuilding(tags map[string]string) bool {
 	return tags["building"] != ""
 }
 
-func isCivic(tags map[string]string) bool {
+func isUrban(tags map[string]string) bool {
+	// Urban areas include landuse zones (residential/commercial/industrial)
+	// and urban buildings (schools, hospitals, universities)
+	landuse := tags["landuse"]
 	amenity := tags["amenity"]
-	return amenity == "school" ||
+
+	return landuse == "residential" ||
+		landuse == "commercial" ||
+		landuse == "industrial" ||
+		landuse == "retail" ||
+		amenity == "school" ||
 		amenity == "hospital" ||
 		amenity == "university" ||
 		amenity == "library" ||

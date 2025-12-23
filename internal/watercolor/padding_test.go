@@ -12,7 +12,7 @@ func TestRequiredPaddingPx(t *testing.T) {
 		geojson.LayerLand:     image.NewNRGBA(image.Rect(0, 0, 2, 2)),
 		geojson.LayerWater:    image.NewNRGBA(image.Rect(0, 0, 2, 2)),
 		geojson.LayerParks:    image.NewNRGBA(image.Rect(0, 0, 2, 2)),
-		geojson.LayerCivic:    image.NewNRGBA(image.Rect(0, 0, 2, 2)),
+		geojson.LayerUrban:    image.NewNRGBA(image.Rect(0, 0, 2, 2)),
 		geojson.LayerRoads:    image.NewNRGBA(image.Rect(0, 0, 2, 2)),
 		geojson.LayerHighways: image.NewNRGBA(image.Rect(0, 0, 2, 2)),
 	}

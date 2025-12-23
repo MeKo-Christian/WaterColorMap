@@ -56,23 +56,48 @@ func NewEmptyMask(bounds image.Rectangle) *image.Gray {
 // MaxMask computes a pixel-wise max of two masks (union/or for alpha masks).
 // Masks must have identical bounds.
 func MaxMask(a, b *image.Gray) *image.Gray {
-	if a == nil || b == nil {
-		return nil
-	}
-	if a.Bounds() != b.Bounds() {
-		return nil
+	return MaxMasks(a, b)
+}
+
+// MaxMasks computes a pixel-wise max of multiple masks (union/or for alpha masks).
+// All masks must have identical bounds. Nil masks are skipped.
+// Returns nil if no valid masks are provided.
+func MaxMasks(masks ...*image.Gray) *image.Gray {
+	// Filter out nil masks and find bounds
+	var validMasks []*image.Gray
+	var bounds image.Rectangle
+	for _, m := range masks {
+		if m != nil {
+			if len(validMasks) == 0 {
+				bounds = m.Bounds()
+			} else if m.Bounds() != bounds {
+				return nil // Mismatched bounds
+			}
+			validMasks = append(validMasks, m)
+		}
 	}
 
-	bounds := a.Bounds()
+	if len(validMasks) == 0 {
+		return nil
+	}
+	if len(validMasks) == 1 {
+		// Return a copy to maintain immutability
+		out := image.NewGray(bounds)
+		copy(out.Pix, validMasks[0].Pix)
+		return out
+	}
+
 	out := image.NewGray(bounds)
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			av := a.GrayAt(x, y).Y
-			bv := b.GrayAt(x, y).Y
-			if bv > av {
-				av = bv
+			var maxVal uint8
+			for _, m := range validMasks {
+				v := m.GrayAt(x, y).Y
+				if v > maxVal {
+					maxVal = v
+				}
 			}
-			out.SetGray(x, y, color.Gray{Y: av})
+			out.SetGray(x, y, color.Gray{Y: maxVal})
 		}
 	}
 	return out
@@ -237,6 +262,69 @@ func GeneratePerlinNoiseWithOffset(
 	}
 
 	return noise
+}
+
+// smoothstep performs smooth Hermite interpolation between 0 and 1.
+// Returns 0 if x <= edge0, 1 if x >= edge1, otherwise smooth interpolation.
+func smoothstep(edge0, edge1, x float64) float64 {
+	if x <= edge0 {
+		return 0
+	}
+	if x >= edge1 {
+		return 1
+	}
+	t := (x - edge0) / (edge1 - edge0)
+	return t * t * (3 - 2*t)
+}
+
+// ApplyNoiseToMaskAdaptive overlays Perlin noise onto a blurred mask with distance-based attenuation.
+// For thin structures (low distance values), noise is reduced to prevent fragmentation.
+// distanceMap: euclidean distance transform of the mask (pixel values represent distance in pixels)
+// strength: base noise strength (0.0 = no noise, 1.0 = full noise)
+// minDist: distance below which noise is minimal
+// maxDist: distance above which noise is at full strength
+func ApplyNoiseToMaskAdaptive(maskImg, noise, distanceMap *image.Gray, strength float64, minDist, maxDist float64) *image.Gray {
+	bounds := maskImg.Bounds()
+	result := image.NewGray(bounds)
+
+	noiseBounds := noise.Bounds()
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			// Get mask value
+			maskVal := float64(maskImg.GrayAt(x, y).Y)
+
+			// Get distance value (pixel intensity represents distance in pixels)
+			distVal := float64(distanceMap.GrayAt(x, y).Y)
+
+			// Calculate noise scaling based on distance
+			// Use smoothstep for gradual transition
+			noiseScale := smoothstep(minDist, maxDist, distVal)
+
+			// Get noise value
+			nx := (x - bounds.Min.X) % noiseBounds.Dx()
+			ny := (y - bounds.Min.Y) % noiseBounds.Dy()
+			noiseVal := float64(noise.GrayAt(noiseBounds.Min.X+nx, noiseBounds.Min.Y+ny).Y)
+
+			// Apply noise as a perturbation, scaled by distance
+			noiseDelta := (noiseVal - 128.0) * strength * noiseScale
+
+			// Combine mask and noise
+			combined := maskVal + noiseDelta
+
+			// Clamp to valid range
+			if combined < 0 {
+				combined = 0
+			}
+			if combined > 255 {
+				combined = 255
+			}
+
+			result.SetGray(x, y, color.Gray{Y: uint8(combined)})
+		}
+	}
+
+	return result
 }
 
 // ApplyNoiseToMask overlays Perlin noise onto a blurred mask to create organic edges.

@@ -56,11 +56,14 @@ type LayerStyle struct {
 	MaskNoiseStrength float64
 	ShadeStrength     float64
 	EdgeGamma         float64
+	NoiseMinDist      float64 // Distance below which noise is minimal (for adaptive noise)
+	NoiseMaxDist      float64 // Distance above which noise is at full strength (for adaptive noise)
 	MaskBlurSigma     float32
 	ShadeSigma        float32
 	EdgeSigma         float32
 	MaskThreshold     *uint8 // Optional per-layer threshold override (if nil, uses global Params.Threshold)
 	InvertMask        bool   // If true, invert the mask after threshold (used for land = invert of non-land)
+	AdaptiveNoise     bool   // If true, scale noise based on feature distance (protects thin structures)
 }
 
 // Params define the common watercolor processing knobs.
@@ -109,56 +112,69 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 		Seed:           seed,
 		Styles: map[geojson.LayerType]LayerStyle{
 			geojson.LayerLand: {
-				Layer:          geojson.LayerLand,
-				Texture:        textures[geojson.LayerLand],
-				ShadeSigma:     3.5,
-				ShadeStrength:  0.12,
-				EdgeStrength:   0.3,  // Match old generator shadow strength
-				EdgeSigma:      3.0,  // radius = 3.0 * 3 = 9.0 (matches old)
-				EdgeGamma:      9.0,  // Match old generator gamma
-				InvertMask:     true, // Land is the inverse of non-land (water+rivers+roads)
+				Layer:         geojson.LayerLand,
+				Texture:       textures[geojson.LayerLand],
+				ShadeSigma:    3.5,
+				ShadeStrength: 0.12,
+				EdgeStrength:  0.3,  // Match old generator shadow strength
+				EdgeSigma:     3.0,  // radius = 3.0 * 3 = 9.0 (matches old)
+				EdgeGamma:     9.0,  // Match old generator gamma
+				InvertMask:    true, // Land is the inverse of non-land (water+rivers+roads)
 			},
 			geojson.LayerWater: {
-				Layer:          geojson.LayerWater,
-				Texture:        textures[geojson.LayerWater],
-				ShadeSigma:     0,
-				ShadeStrength:  0,
-				EdgeStrength:   0.2,
-				EdgeSigma: 3.5,
-				EdgeGamma:      1.4,
+				Layer:             geojson.LayerWater,
+				Texture:           textures[geojson.LayerWater],
+				MaskBlurSigma:     0.9,  // Moderate blur for subtle softening
+				MaskNoiseStrength: 0.18, // Moderate noise for organic edges
+				AdaptiveNoise:     true, // Protect thin roads from fragmentation
+				NoiseMinDist:      2.0,  // Minimal noise below 2px from edge
+				NoiseMaxDist:      10.0, // Full noise above 10px from edge
+				ShadeSigma:        0,
+				ShadeStrength:     0,
+				EdgeStrength:      0.2,
+				EdgeSigma:         3.5,
+				EdgeGamma:         9.3,
+				MaskThreshold:     ptr(144),
 			},
 			geojson.LayerRivers: {
 				Layer:             geojson.LayerRivers,
 				Texture:           textures[geojson.LayerWater], // Use same texture as water
-				MaskBlurSigma:     0.8,                          // Light blur for natural river edges
+				MaskThreshold:     ptr(98),                      // Balanced threshold for rivers
+				MaskBlurSigma:     0.7,                          // Light blur for natural edges
 				MaskNoiseStrength: 0.15,                         // Subtle noise for organic feel
+				AdaptiveNoise:     true,                         // Protect narrow streams from fragmentation
+				NoiseMinDist:      2.0,                          // Minimal noise below 2px from edge
+				NoiseMaxDist:      10.0,                         // Full noise above 10px from edge
 				ShadeSigma:        0,
 				ShadeStrength:     0,
 				EdgeStrength:      0.2,
-				EdgeSigma:    2.5,
-				EdgeGamma:         1.3,
+				EdgeSigma:         2.5,
+				EdgeGamma:         9.3,
 			},
 			geojson.LayerParks: {
-				Layer:          geojson.LayerParks,
-				Texture:        textures[geojson.LayerParks],
-				MaskThreshold:  ptr(120), // Higher threshold for layers after land
-				ShadeSigma:     0,
-				ShadeStrength:  0,
-				EdgeStrength:   0.2,
-				EdgeSigma: 3.0,
-				EdgeGamma:      1.4,
+				Layer:         geojson.LayerParks,
+				Texture:       textures[geojson.LayerParks],
+				MaskThreshold: ptr(120), // Higher threshold for layers after land
+				ShadeSigma:    0,
+				ShadeStrength: 0,
+				EdgeStrength:  0.2,
+				EdgeSigma:     3.0,
+				EdgeGamma:     8.6,
 			},
 			geojson.LayerRoads: {
 				Layer:             geojson.LayerRoads,
 				Texture:           textures[geojson.LayerRoads],
-				MaskThreshold:     ptr(120), // Higher threshold for layers after land
-				MaskBlurSigma:     1.4,
-				MaskNoiseStrength: 0.25,
+				MaskThreshold:     ptr(100), // Balanced threshold for roads
+				MaskBlurSigma:     0.9,      // Moderate blur for subtle softening
+				MaskNoiseStrength: 0.18,     // Moderate noise for organic edges
+				AdaptiveNoise:     true,     // Protect thin roads from fragmentation
+				NoiseMinDist:      2.0,      // Minimal noise below 2px from edge
+				NoiseMaxDist:      10.0,     // Full noise above 10px from edge
 				ShadeSigma:        0,
 				ShadeStrength:     0,
 				EdgeStrength:      0.2,
-				EdgeSigma:    1.5,
-				EdgeGamma:         1.6,
+				EdgeSigma:         2.8,
+				EdgeGamma:         8.9,
 			},
 			geojson.LayerHighways: {
 				Layer:             geojson.LayerHighways,
@@ -166,31 +182,34 @@ func DefaultParams(tileSize int, seed int64, textures map[geojson.LayerType]imag
 				MaskThreshold:     ptr(120), // Higher threshold for layers after land
 				MaskBlurSigma:     1.1,
 				MaskNoiseStrength: 0.18,
+				AdaptiveNoise:     true, // Protect highways from fragmentation
+				NoiseMinDist:      4.0,  // Minimal noise below 4px from edge
+				NoiseMaxDist:      15.0, // Full noise above 15px from edge
 				ShadeSigma:        0,
 				ShadeStrength:     0,
 				EdgeStrength:      0.2,
-				EdgeSigma:    1.4,
-				EdgeGamma:         1.5,
+				EdgeSigma:         2.9,
+				EdgeGamma:         9.2,
 			},
-			geojson.LayerCivic: {
-				Layer:          geojson.LayerCivic,
-				Texture:        textures[geojson.LayerCivic],
-				MaskThreshold:  ptr(120), // Higher threshold for layers after land
-				ShadeSigma:     0,
-				ShadeStrength:  0,
-				EdgeStrength:   0.2,
-				EdgeSigma: 2.5,
-				EdgeGamma:      1.4,
+			geojson.LayerUrban: {
+				Layer:         geojson.LayerUrban,
+				Texture:       textures[geojson.LayerUrban],
+				MaskThreshold: ptr(160),
+				ShadeSigma:    0,
+				ShadeStrength: 0,
+				EdgeStrength:  0.2,
+				EdgeSigma:     3.1,
+				EdgeGamma:     8.8,
 			},
 			geojson.LayerBuildings: {
-				Layer:          geojson.LayerBuildings,
-				Texture:        textures[geojson.LayerCivic], // Use same texture as civic
-				MaskThreshold:  ptr(120),                     // Higher threshold for layers after land
-				ShadeSigma:     0,
-				ShadeStrength:  0,
-				EdgeStrength:   0.2,
-				EdgeSigma: 2.5,
-				EdgeGamma:      1.5,
+				Layer:         geojson.LayerBuildings,
+				Texture:       textures[geojson.LayerUrban], // Use same texture as urban
+				MaskThreshold: ptr(150),                     // Higher threshold for layers after land
+				ShadeSigma:    0,
+				ShadeStrength: 0,
+				EdgeStrength:  0.2,
+				EdgeSigma:     3.2,
+				EdgeGamma:     8.6,
 			},
 		},
 	}
@@ -224,7 +243,16 @@ func processMask(baseMask *image.Gray, layer geojson.LayerType, params Params) (
 	blurred := mask.BoxBlurSigma(baseMask, layerBlur)
 	noisy := blurred
 	if layerNoiseStrength != 0 {
-		noisy = mask.ApplyNoiseToMask(blurred, params.PerlinNoise, layerNoiseStrength)
+		if style.AdaptiveNoise && style.NoiseMaxDist > 0 {
+			// Compute distance transform of thresholded mask to measure feature thickness
+			// Use NoiseMaxDist as the max distance since we only need to distinguish up to that point
+			binaryMask := mask.ApplyThreshold(blurred, threshold)
+			distMap := mask.EuclideanDistanceTransform(binaryMask, style.NoiseMaxDist)
+			noisy = mask.ApplyNoiseToMaskAdaptive(blurred, params.PerlinNoise, distMap,
+				layerNoiseStrength, style.NoiseMinDist, style.NoiseMaxDist)
+		} else {
+			noisy = mask.ApplyNoiseToMask(blurred, params.PerlinNoise, layerNoiseStrength)
+		}
 	}
 
 	// Apply threshold with antialiasing, optionally inverting (for land = invert of non-land)

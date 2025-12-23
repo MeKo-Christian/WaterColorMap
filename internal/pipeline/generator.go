@@ -138,6 +138,13 @@ func NewGenerator(ds DataSource, stylesDir, texturesDir, outputDir string, tileS
 // Returns the final tile path and (optionally) the layer directory when kept.
 // debugCtx can be *DebugContext or nil; pass nil in production for zero overhead.
 func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool, filenameSuffix string, debugCtx interface{}) (string, string, error) {
+	return g.GenerateWithData(ctx, coords, force, filenameSuffix, debugCtx, nil)
+}
+
+// GenerateWithData renders a tile with optionally pre-fetched data.
+// If prefetchedData is nil, data will be fetched from the datasource.
+// This allows decoupling data fetching from rendering for better error handling and retry logic.
+func (g *Generator) GenerateWithData(ctx context.Context, coords tile.Coords, force bool, filenameSuffix string, debugCtx interface{}, prefetchedData *types.TileData) (string, string, error) {
 	// Type-assert debugCtx to *DebugContext if provided
 	var dc *DebugContext
 	if debugCtx != nil {
@@ -172,8 +179,8 @@ func (g *Generator) Generate(ctx context.Context, coords tile.Coords, force bool
 		return "", "", fmt.Errorf("failed to create output dir: %w", err)
 	}
 
-	// Phase 1: Setup and render all layers
-	renderResult, err := g.renderLayers(ctx, coords, dc)
+	// Phase 1: Setup and render all layers (optionally with pre-fetched data)
+	renderResult, err := g.renderLayersWithData(ctx, coords, dc, prefetchedData)
 	if err != nil {
 		return "", "", err
 	}
@@ -237,11 +244,46 @@ func (g *Generator) log() *slog.Logger {
 	return slog.Default()
 }
 
-// renderLayers handles setup, data fetching, and rendering of all map layers.
-func (g *Generator) renderLayers(
+// CalculateFetchBounds returns the bounding box needed to fetch data for a tile.
+// This includes padding for metatile rendering to avoid edge artifacts.
+func (g *Generator) CalculateFetchBounds(coords tile.Coords) types.BoundingBox {
+	// Create watercolor parameters to calculate padding
+	params := watercolor.DefaultParams(g.tileSize, g.seed, g.textures)
+	params.BlurSigma = watercolor.ZoomAdjustedBlurSigma(params.BlurSigma, int(coords.Z))
+	params.AntialiasSigma = watercolor.ZoomAdjustedBlurSigma(params.AntialiasSigma, int(coords.Z))
+
+	padPx := watercolor.RequiredPaddingPx(params)
+	if padPx > g.tileSize {
+		padPx = g.tileSize
+	}
+
+	tileCoord := types.TileCoordinate{
+		Zoom: int(coords.Z),
+		X:    int(coords.X),
+		Y:    int(coords.Y),
+	}
+
+	dataBounds := types.TileToBounds(tileCoord)
+	if padPx > 0 {
+		padFrac := float64(padPx) / float64(g.tileSize)
+		dataBounds = dataBounds.ExpandByFraction(padFrac)
+	}
+
+	return dataBounds
+}
+
+// TileSize returns the configured tile size for this generator.
+func (g *Generator) TileSize() int {
+	return g.tileSize
+}
+
+// renderLayersWithData handles setup, data fetching (if needed), and rendering of all map layers.
+// If prefetchedData is provided, it will be used instead of fetching from the datasource.
+func (g *Generator) renderLayersWithData(
 	ctx context.Context,
 	coords tile.Coords,
 	dc *DebugContext,
+	prefetchedData *types.TileData,
 ) (*renderLayersResult, error) {
 	// Create watercolor parameters with zoom adjustments
 	params := watercolor.DefaultParams(g.tileSize, g.seed, g.textures)
@@ -267,8 +309,6 @@ func (g *Generator) renderLayers(
 		params.OffsetX, params.OffsetY,
 	)
 
-	// Fetch tile data with bounds expansion for padding
-	g.log().Info("Fetching tile data", "coords", coords.String(), "padPx", padPx)
 	tileCoord := types.TileCoordinate{
 		Zoom: int(coords.Z),
 		X:    int(coords.X),
@@ -281,15 +321,22 @@ func (g *Generator) renderLayers(
 		dataBounds = dataBounds.ExpandByFraction(padFrac)
 	}
 
+	// Use prefetched data if available, otherwise fetch from datasource
 	var data *types.TileData
 	var err error
-	if dsb, ok := g.ds.(dataSourceWithBounds); ok {
-		data, err = dsb.FetchTileDataWithBounds(ctx, tileCoord, dataBounds)
+	if prefetchedData != nil {
+		g.log().Info("Using pre-fetched tile data", "coords", coords.String())
+		data = prefetchedData
 	} else {
-		data, err = g.ds.FetchTileData(ctx, tileCoord)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch tile data: %w", err)
+		g.log().Info("Fetching tile data", "coords", coords.String(), "padPx", padPx)
+		if dsb, ok := g.ds.(dataSourceWithBounds); ok {
+			data, err = dsb.FetchTileDataWithBounds(ctx, tileCoord, dataBounds)
+		} else {
+			data, err = g.ds.FetchTileData(ctx, tileCoord)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch tile data: %w", err)
+		}
 	}
 
 	// Create temp directory for rendered layer PNGs
@@ -404,10 +451,10 @@ func buildMasks(
 	dc.Capture("03_roads_alpha", "Alpha mask from roads layer", roadsMask, 3)
 	dc.Capture("03_highways_alpha", "Alpha mask from highways layer", highwaysAlpha, 3)
 
-	// Combine water, rivers, and roads into non-land union mask
+	// Combine water, rivers, roads, and highways into non-land union mask
 	// This is the base mask for land - will be inverted during processing (InvertMask=true)
-	nonLandUnion := mask.MaxMask(mask.MaxMask(waterMask, riversMask), roadsMask)
-	dc.Capture("04_nonland_union", "Union of water + rivers + roads masks", nonLandUnion, 4)
+	nonLandUnion := mask.MaxMasks(waterMask, riversMask, roadsMask, highwaysAlpha)
+	dc.Capture("04_nonland_union", "Union of water + rivers + roads + highways masks", nonLandUnion, 4)
 
 	return &maskSet{
 		waterMask:     waterMask,
@@ -493,7 +540,7 @@ func paintAllLayers(
 		dc.Capture("19_painted_highways", "Watercolor-painted highways layer", highwaysPainted, 19)
 	}
 
-	// Constrain parks/civic/buildings to land, then paint
+	// Constrain parks/urban/buildings to land, then paint
 	if parksImg := rawLayers[geojson.LayerParks]; parksImg != nil {
 		parksMask := mask.MinMask(mask.ExtractAlphaMask(parksImg), landMask)
 		dc.Capture("14_parks_on_land", "Parks constrained to land", parksMask, 14)
@@ -505,15 +552,15 @@ func paintAllLayers(
 		dc.Capture("16_painted_parks", "Watercolor-painted parks layer", parksPainted, 16)
 	}
 
-	if civicImg := rawLayers[geojson.LayerCivic]; civicImg != nil {
-		civicMask := mask.MinMask(mask.ExtractAlphaMask(civicImg), landMask)
-		dc.Capture("10_civic_on_land", "Civic constrained to land", civicMask, 10)
-		civicPainted, err := watercolor.PaintLayerFromMask(civicMask, geojson.LayerCivic, params)
+	if urbanImg := rawLayers[geojson.LayerUrban]; urbanImg != nil {
+		urbanMask := mask.MinMask(mask.ExtractAlphaMask(urbanImg), landMask)
+		dc.Capture("10_civic_on_land", "Civic constrained to land", urbanMask, 10)
+		urbanPainted, err := watercolor.PaintLayerFromMask(urbanMask, geojson.LayerUrban, params)
 		if err != nil {
-			return nil, fmt.Errorf("failed to paint civic constrained to land: %w", err)
+			return nil, fmt.Errorf("failed to paint urban constrained to land: %w", err)
 		}
-		painted[geojson.LayerCivic] = civicPainted
-		dc.Capture("17_painted_civic", "Watercolor-painted civic layer", civicPainted, 17)
+		painted[geojson.LayerUrban] = urbanPainted
+		dc.Capture("17_painted_civic", "Watercolor-painted urban layer", urbanPainted, 17)
 	}
 
 	if buildingsImg := rawLayers[geojson.LayerBuildings]; buildingsImg != nil {
@@ -543,11 +590,11 @@ func (g *Generator) compositeAndWrite(
 	// Paper base: fill the entire tile with a white texture so road cutouts show through
 	base := texture.TileTexture(g.textures[geojson.LayerPaper], params.TileSize, params.OffsetX, params.OffsetY)
 
-	// Layer order matches OSM standard: land (back) → parks → rivers → water → roads → highways → buildings → civic (front)
+	// Layer order matches OSM standard: land (back) → parks → rivers → water → roads → highways → buildings → urban (front)
 	composited, err := composite.CompositeLayersOverBase(
 		base,
 		painted,
-		[]geojson.LayerType{geojson.LayerLand, geojson.LayerParks, geojson.LayerRivers, geojson.LayerWater, geojson.LayerRoads, geojson.LayerHighways, geojson.LayerBuildings, geojson.LayerCivic},
+		[]geojson.LayerType{geojson.LayerLand, geojson.LayerParks, geojson.LayerRivers, geojson.LayerWater, geojson.LayerRoads, geojson.LayerHighways, geojson.LayerBuildings, geojson.LayerUrban},
 		params.TileSize,
 	)
 	if err != nil {
